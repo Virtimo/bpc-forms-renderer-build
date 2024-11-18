@@ -1,0 +1,83 @@
+{
+  "metaData": {
+    "id": 1,
+    "name": "Test Form 2",
+    "version": 1,
+    "author": "Andre",
+    "creationDate": "2021-01-22T12:00:00+0200"
+  },
+  "configuration": {
+    "defaultLanguage": "en"
+  },
+  "components": [
+    {
+      "type": "container",
+      "layout": "vertical",
+      "components": [
+        {
+          "type": "html",
+          "value": "<b>Test Form</b><br>Dies ist das zweite Testformular."
+        },
+        {
+          "id": "lastName",
+          "type": "textField",
+          "label": {
+            "de": "Nachname",
+            "en": "Lastname"
+          }
+        },
+        {
+          "id": "firstName",
+          "type": "textField",
+          "label": {
+            "de": "Vorname",
+            "en": "Firstname"
+          }
+        },
+        {
+          "id": "consent",
+          "type": "checkbox",
+          "label": {
+            "de": "OK?",
+            "en": "O.K.?"
+          }
+        },
+        {
+          "type": "container",
+          "layout": "horizontal",
+          "components": [
+            {
+              "type": "button",
+              "action": "reset",
+              "label": {
+                "de": "Zurücksetzen",
+                "en": "reset"
+              }
+            },
+            {
+              "type": "button",
+              "action": "submit",
+              "label": {
+                "de": "Formular abschicken",
+                "en": "submit form"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "dataSchema": {
+  },
+  "initialData": {
+    "lastName": "Doe",
+    "firstName": "John"
+  },
+  "state": {
+    "language": "de",
+    "data": {
+      "lastName": "Smith",
+      "firstName": "Agent"
+    }
+  }
+}

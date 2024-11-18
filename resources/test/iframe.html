@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html l>
+<head>
+    <meta charset="UTF-8">
+    <title>iFrame Test</title>
+    <style>
+        html, body {
+            height: 100%;
+            width: 100%;
+        }
+
+        .container {
+            display: flex;
+            justify-content: space-between;
+        }
+    </style>
+    <script>
+        getIframe = function () {
+            var iframe = document.createElement("iframe");
+            iframe.src = "../../index.html";
+            iframe.height = 600;
+            iframe.width = "100%";
+            return iframe;
+        };
+
+        addIframeWithUrl = function () {
+            const iframe = getIframe();
+            iframe.src = iframe.src + "?formUrl=resources/test/testFormConfig.json";
+            window.document.body.appendChild(iframe);
+        };
+
+        addIframeAndInjectForm = function (delay){
+            const iframe = getIframe();
+            delay = delay || 0;
+
+            window.addEventListener("message", (event) => {
+                console.warn(event.data);
+                // we only want message from "postMessage" fn, which sends a string as data
+                if (event.data && event.isTrusted !== false /* IE don't support this, so undefined should be ok */) {
+                    const dataJson = JSON.parse(event.data);
+                    if (dataJson && dataJson.requestName === "ready") {
+                        iframe.contentWindow.postMessage(
+                            JSON.stringify({
+                                                requestName: "setFormConfig",
+                                                request:  {
+                                                    "$schema": "http://bpc.virtimo.net/forms/1/schema",
+                                                    "metaData": {
+                                                        "id": 0,
+                                                        "version": 0
+                                                    },
+                                                    "configuration": {
+                                                        "submitUrl": "test/"
+                                                    },
+                                                    "components": [
+                                                        {
+                                                            "type": "container",
+                                                            "label": "Iframe",
+                                                            "components": [
+                                                            {
+                                                                "value":"${/data/welcomeMsg}",
+                                                                "type": "html",
+                                                                "id":"htmlField"
+                                                                },
+                                                                {
+                                                                    "id": "empty",
+                                                                    "type": "textfield",
+                                                                    "value":"${/data/empty}"
+                                                                },
+                                                                {
+                                                                    "type": "textfield",
+                                                                    "id": "tooShortText",
+                                                                    "value": "${/data/textValue}"
+                                                                },
+                                                                {
+                                                                    "id": "reset",
+                                                                    "type": "button",
+                                                                    "action": "reset",
+                                                                    "label": "reset"
+                                                                },
+                                                                {
+                                                                    "id": "print",
+                                                                    "type": "button",
+                                                                    "action": "print",
+                                                                    "label": "print"
+                                                                },
+                                                                {
+                                                                    "id": "submit",
+                                                                    "type": "button",
+                                                                    "action": "submit",
+                                                                    "label": "submit"
+                                                                },
+                                                                {
+                                                                    "id": "validate",
+                                                                    "type": "button",
+                                                                    "action": "validate",
+                                                                    "label": "validate"
+                                                                },
+                                                            ]
+                                                        }
+                                                    ],
+                                                    "dataSchema": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                        "textValue": {
+                                                                "minLength": 20,
+                                                                "type": "string",
+                                                                "errorMessage":"Der Wert muss mindestens 20 Zeichen lang sein"
+                                                            }
+                                                        }
+                                                    },
+                                                    "state": {
+                                                        "data": {
+                                                            "textValue": "to short value",
+                                                            "welcomeMsg": "<h1>Hallo Welt</h1>",
+                                                            "empty": ""
+                                                        }
+                                                    }
+                                                }
+                                           }),
+                            "*"
+                        );
+                    }
+                }
+            }, false);
+
+            window.document.body.appendChild(iframe);
+        }
+    </script>
+</head>
+<body>
+<div class="container">
+    <span onclick="addIframeWithUrl()" id="loadWithUrl"> | Load with URL |</span>
+    <span onclick="addIframeAndInjectForm()" id="loadAndInjectForm">| load via postMsg |</span>
+</div>
+</body>
+</html>

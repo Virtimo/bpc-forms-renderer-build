@@ -1,0 +1,1156 @@
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-switch-video::before {
+    content: 'switch_video';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-tag-faces::before {
+    content: 'tag_faces';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-texture::before {
+    content: 'texture';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-timelapse::before {
+    content: 'timelapse';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-timer::before {
+    content: 'timer';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-timer-10::before {
+    content: 'timer_10';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-timer-3::before {
+    content: 'timer_3';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-timer-off::before {
+    content: 'timer_off';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-tonality::before {
+    content: 'tonality';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-transform::before {
+    content: 'transform';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-tune::before {
+    content: 'tune';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-view-comfy::before {
+    content: 'view_comfy';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-view-compact::before {
+    content: 'view_compact';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-vignette::before {
+    content: 'vignette';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-wb-auto::before {
+    content: 'wb_auto';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-wb-cloudy::before {
+    content: 'wb_cloudy';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-wb-incandescent::before {
+    content: 'wb_incandescent';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-wb-iridescent::before {
+    content: 'wb_iridescent';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-wb-sunny::before {
+    content: 'wb_sunny';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-add-location::before {
+    content: 'add_location';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-beenhere::before {
+    content: 'beenhere';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-directions::before {
+    content: 'directions';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-directions-bike::before {
+    content: 'directions_bike';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-directions-boat::before {
+    content: 'directions_boat';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-directions-bus::before {
+    content: 'directions_bus';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-directions-car::before {
+    content: 'directions_car';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-directions-railway::before {
+    content: 'directions_railway';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-directions-run::before {
+    content: 'directions_run';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-directions-subway::before {
+    content: 'directions_subway';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-directions-transit::before {
+    content: 'directions_transit';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-directions-walk::before {
+    content: 'directions_walk';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-edit-location::before {
+    content: 'edit_location';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-ev-station::before {
+    content: 'ev_station';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-flight::before {
+    content: 'flight';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-hotel::before {
+    content: 'hotel';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-layers::before {
+    content: 'layers';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-layers-clear::before {
+    content: 'layers_clear';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-local-activity::before {
+    content: 'local_activity';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-local-airport::before {
+    content: 'local_airport';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-local-atm::before {
+    content: 'local_atm';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-local-bar::before {
+    content: 'local_bar';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-local-cafe::before {
+    content: 'local_cafe';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-local-car-wash::before {
+    content: 'local_car_wash';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-local-convenience-store::before {
+    content: 'local_convenience_store';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-local-dining::before {
+    content: 'local_dining';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-local-drink::before {
+    content: 'local_drink';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-local-florist::before {
+    content: 'local_florist';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-local-gas-station::before {
+    content: 'local_gas_station';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-local-grocery-store::before {
+    content: 'local_grocery_store';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-local-hospital::before {
+    content: 'local_hospital';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-local-hotel::before {
+    content: 'local_hotel';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-local-laundry-service::before {
+    content: 'local_laundry_service';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-local-library::before {
+    content: 'local_library';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-local-mall::before {
+    content: 'local_mall';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-local-movies::before {
+    content: 'local_movies';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-local-offer::before {
+    content: 'local_offer';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-local-parking::before {
+    content: 'local_parking';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-local-pharmacy::before {
+    content: 'local_pharmacy';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-local-phone::before {
+    content: 'local_phone';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-local-pizza::before {
+    content: 'local_pizza';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-local-play::before {
+    content: 'local_play';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-local-post-office::before {
+    content: 'local_post_office';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-local-printshop::before {
+    content: 'local_printshop';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-local-see::before {
+    content: 'local_see';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-local-shipping::before {
+    content: 'local_shipping';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-local-taxi::before {
+    content: 'local_taxi';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-map::before {
+    content: 'map';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-my-location::before {
+    content: 'my_location';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-navigation::before {
+    content: 'navigation';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-near-me::before {
+    content: 'near_me';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-person-pin::before {
+    content: 'person_pin';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-person-pin-circle::before {
+    content: 'person_pin_circle';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-pin-drop::before {
+    content: 'pin_drop';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-place::before {
+    content: 'place';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-rate-review::before {
+    content: 'rate_review';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-restaurant::before {
+    content: 'restaurant';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-restaurant-menu::before {
+    content: 'restaurant_menu';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-satellite::before {
+    content: 'satellite';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-store-mall-directory::before {
+    content: 'store_mall_directory';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-streetview::before {
+    content: 'streetview';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-subway::before {
+    content: 'subway';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-terrain::before {
+    content: 'terrain';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-traffic::before {
+    content: 'traffic';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-train::before {
+    content: 'train';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-tram::before {
+    content: 'tram';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-transfer-within-a-station::before {
+    content: 'transfer_within_a_station';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-zoom-out-map::before {
+    content: 'zoom_out_map';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-apps::before {
+    content: 'apps';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-arrow-back::before,
+.x-fi-arrow-left::before {
+    content: 'arrow_back';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-arrow-downward::before {
+    content: 'arrow_downward';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-arrow-drop-down::before {
+    content: 'arrow_drop_down';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-arrow-drop-down-circle::before {
+    content: 'arrow_drop_down_circle';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-arrow-drop-up::before {
+    content: 'arrow_drop_up';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-arrow-forward::before {
+    content: 'arrow_forward';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-arrow-upward::before {
+    content: 'arrow_upward';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-cancel::before {
+    content: 'cancel';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-check::before {
+    content: 'check';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-chevron-left::before {
+    content: 'chevron_left';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-chevron-right::before {
+    content: 'chevron_right';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-close::before {
+    content: 'close';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-expand-less::before {
+    content: 'expand_less';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-expand-more::before {
+    content: 'expand_more';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-first-page::before {
+    content: 'first_page';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-fullscreen::before {
+    content: 'fullscreen';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-fullscreen-exit::before {
+    content: 'fullscreen_exit';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-last-page::before {
+    content: 'last_page';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-menu::before {
+    content: 'menu';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-more-horiz::before {
+    content: 'more_horiz';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-more-vert::before {
+    content: 'more_vert';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-refresh::before {
+    content: 'refresh';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-subdirectory-arrow-left::before {
+    content: 'subdirectory_arrow_left';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-subdirectory-arrow-right::before {
+    content: 'subdirectory_arrow_right';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-adb::before {
+    content: 'adb';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-airline-seat-flat::before {
+    content: 'airline_seat_flat';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-airline-seat-flat-angled::before {
+    content: 'airline_seat_flat_angled';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-airline-seat-individual-suite::before {
+    content: 'airline_seat_individual_suite';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-airline-seat-legroom-extra::before {
+    content: 'airline_seat_legroom_extra';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-airline-seat-legroom-normal::before {
+    content: 'airline_seat_legroom_normal';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-airline-seat-legroom-reduced::before {
+    content: 'airline_seat_legroom_reduced';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-airline-seat-recline-extra::before {
+    content: 'airline_seat_recline_extra';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-airline-seat-recline-normal::before {
+    content: 'airline_seat_recline_normal';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-bluetooth-audio::before {
+    content: 'bluetooth_audio';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-confirmation-number::before {
+    content: 'confirmation_number';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-disc-full::before {
+    content: 'disc_full';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-do-not-disturb::before {
+    content: 'do_not_disturb';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-do-not-disturb-alt::before {
+    content: 'do_not_disturb_alt';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-do-not-disturb-off::before {
+    content: 'do_not_disturb_off';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-do-not-disturb-on::before {
+    content: 'do_not_disturb_on';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-drive-eta::before {
+    content: 'drive_eta';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-enhanced-encryption::before {
+    content: 'enhanced_encryption';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-event-available::before {
+    content: 'event_available';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-event-busy::before {
+    content: 'event_busy';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-event-note::before {
+    content: 'event_note';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-folder-special::before {
+    content: 'folder_special';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-live-tv::before {
+    content: 'live_tv';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-mms::before {
+    content: 'mms';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-more::before {
+    content: 'more';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-network-check::before {
+    content: 'network_check';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-network-locked::before {
+    content: 'network_locked';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-no-encryption::before {
+    content: 'no_encryption';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-ondemand-video::before {
+    content: 'ondemand_video';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-personal-video::before {
+    content: 'personal_video';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-phone-bluetooth-speaker::before {
+    content: 'phone_bluetooth_speaker';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-phone-forwarded::before {
+    content: 'phone_forwarded';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-phone-in-talk::before {
+    content: 'phone_in_talk';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-phone-locked::before {
+    content: 'phone_locked';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-phone-missed::before {
+    content: 'phone_missed';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-phone-paused::before {
+    content: 'phone_paused';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-power::before {
+    content: 'power';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-priority-high::before {
+    content: 'priority_high';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-sd-card::before {
+    content: 'sd_card';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-sim-card-alert::before {
+    content: 'sim_card_alert';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-sms::before {
+    content: 'sms';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-sms-failed::before {
+    content: 'sms_failed';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-sync::before {
+    content: 'sync';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-sync-disabled::before {
+    content: 'sync_disabled';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-sync-problem::before {
+    content: 'sync_problem';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-system-update::before {
+    content: 'system_update';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-tap-and-play::before {
+    content: 'tap_and_play';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-time-to-leave::before {
+    content: 'time_to_leave';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-vibration::before {
+    content: 'vibration';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-voice-chat::before {
+    content: 'voice_chat';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-vpn-lock::before {
+    content: 'vpn_lock';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-wc::before {
+    content: 'wc';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-wifi::before {
+    content: 'wifi';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-ac-unit::before {
+    content: 'ac_unit';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-airport-shuttle::before {
+    content: 'airport_shuttle';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-all-inclusive::before {
+    content: 'all_inclusive';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-beach-access::before {
+    content: 'beach_access';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-business-center::before {
+    content: 'business_center';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-casino::before {
+    content: 'casino';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-child-care::before {
+    content: 'child_care';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-child-friendly::before {
+    content: 'child_friendly';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-fitness-center::before {
+    content: 'fitness_center';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-free-breakfast::before {
+    content: 'free_breakfast';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-golf-course::before {
+    content: 'golf_course';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-hot-tub::before {
+    content: 'hot_tub';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-kitchen::before {
+    content: 'kitchen';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-pool::before {
+    content: 'pool';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-room-service::before {
+    content: 'room_service';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-rv-hookup::before {
+    content: 'rv_hookup';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-smoke-free::before {
+    content: 'smoke_free';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-smoking-rooms::before {
+    content: 'smoking_rooms';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-spa::before {
+    content: 'spa';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-cake::before {
+    content: 'cake';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-domain::before {
+    content: 'domain';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-group::before {
+    content: 'group';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-group-add::before {
+    content: 'group_add';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-location-city::before {
+    content: 'location_city';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-mood::before {
+    content: 'mood';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-mood-bad::before {
+    content: 'mood_bad';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-notifications::before {
+    content: 'notifications';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-notifications-active::before {
+    content: 'notifications_active';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-notifications-none::before {
+    content: 'notifications_none';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-notifications-off::before {
+    content: 'notifications_off';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-notifications-paused::before {
+    content: 'notifications_paused';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-pages::before {
+    content: 'pages';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-party-mode::before {
+    content: 'party_mode';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-people::before {
+    content: 'people';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-people-outline::before {
+    content: 'people_outline';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-person::before {
+    content: 'person';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-person-add::before {
+    content: 'person_add';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-person-outline::before {
+    content: 'person_outline';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-plus-one::before {
+    content: 'plus_one';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-poll::before {
+    content: 'poll';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-public::before {
+    content: 'public';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-school::before {
+    content: 'school';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-sentiment-dissatisfied::before {
+    content: 'sentiment_dissatisfied';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-sentiment-neutral::before {
+    content: 'sentiment_neutral';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-sentiment-satisfied::before {
+    content: 'sentiment_satisfied';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-sentiment-very-dissatisfied::before {
+    content: 'sentiment_very_dissatisfied';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-sentiment-very-satisfied::before {
+    content: 'sentiment_very_satisfied';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-share::before {
+    content: 'share';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-whatshot::before {
+    content: 'whatshot';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-check-box::before {
+    content: 'check_box';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-check-box-outline-blank::before {
+    content: 'check_box_outline_blank';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-indeterminate-check-box::before {
+    content: 'indeterminate_check_box';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-radio-button-checked::before {
+    content: 'radio_button_checked';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-radio-button-unchecked::before {
+    content: 'radio_button_unchecked';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-star::before {
+    content: 'star';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-star-border::before {
+    content: 'star_border';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-star-half::before {
+    content: 'star_half';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/src/Component.scss:70 */
+@font-face {
+    font-family: 'Roboto';
+    font-weight: 400;
+    font-style: normal;
+    src: local('Roboto Regular'), local('Roboto-Regular'), url("../resources/fonts/roboto/Roboto-Regular.ttf") format('truetype');
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/src/Component.scss:78 */
+@font-face {
+    font-family: 'Roboto';
+    font-weight: 100;
+    font-style: normal;
+    src: local('Roboto Light'), local('Roboto-Light'), url("../resources/fonts/roboto/Roboto-Light.ttf") format('truetype');
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/src/Component.scss:87 */
+@font-face {
+    font-family: 'Roboto';
+    font-weight: 600;
+    font-style: normal;
+    src: local('Roboto Medium'), local('Roboto-Medium'), url("../resources/fonts/roboto/Roboto-Medium.ttf") format('truetype');
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/src/Component.scss:96 */
+@font-face {
+    font-family: 'Roboto';
+    font-weight: 900;
+    font-style: normal;
+    src: local('Roboto Bold'), local('Roboto-Bold'), url("../resources/fonts/roboto/Roboto-Bold.ttf") format('truetype');
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/src/Component.scss:105 */
+@font-face {
+    font-family: 'Roboto';
+    font-weight: normal;
+    font-style: italic;
+    src: local('Roboto Italic'), local('Roboto-Italic'), url("../resources/fonts/roboto/Roboto-Italic.ttf") format('truetype');
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/src/Component.scss:116 */
+@font-face {
+    font-family: 'Material Icons';
+    font-style: normal;
+    font-weight: 400;
+    src: local('Material Icons'), local('MaterialIcons-Regular'), url("../resources/fonts/MaterialIcons-Regular.ttf") format('truetype');
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/src/Component.scss:125 */
+html,
+body {
+    font-family: 'Roboto', sans-serif;
+    color: #111;
+    color: var(--color);
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/src/Indicator.scss:1 */
+.x-indicator span {
+    transition: background-color 0.25s ease-out, width 0.1s ease-out, height 0.1s ease-out;
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/src/Button.scss:10 */
+.x-button-fab .x-inner-el {
+    box-shadow: 2px 2px 5px 0 rgba(0, 0, 0, 0.18), 2px 2px 5px 0 rgba(0, 0, 0, 0.12);
+    z-index: 2;
+    color: #fff;
+    color: var(--accent-foreground-color);
+    display: flex;
+    width: 56px;
+    height: 56px;
+    background-color: #2196f3;
+    background-color: var(--accent-color);
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    transition: background-color 450ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/src/Button.scss:23 */
+.x-button-fab .x-ripple {
+    background-color: #fff;
+    background-color: var(--accent-foreground-color);
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/src/Button.scss:27 */
+.x-button-fab.x-hovered .x-inner-el {
+    background-color: #6ab8f7;
+    background-color: var(--accent-pressed-color);
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/src/Button.scss:31 */
+.x-keyboard-mode .x-button-fab.x-focused .x-inner-el {
+    background-color: #6ab8f7;
+    background-color: var(--accent-pressed-color);
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/src/Button.scss:36 */
+.x-big .x-button-fab .x-inner-el {
+    border-radius: 50%;
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/src/Button.scss:41 */
+.x-button-fab .x-icon-el {
+    color: #fff;
+    color: var(--accent-foreground-color);
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/src/Button.scss:46 */
+.x-button-fab.x-pressing .x-inner-el {
+    box-shadow: 2px 2px 5px 0 rgba(0, 0, 0, 0.21), 2px 2px 6px 0 rgba(0, 0, 0, 0.18);
+    z-index: 3;
+    background-color: #6ab8f7;
+    background-color: var(--accent-pressed-color);
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/src/Button.scss:48 */
+.x-button-fab.x-pressing .x-inner-el .x-icon-el {
+    color: #fff;
+    color: var(--accent-foreground-color);
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/src/Button.scss:57 */
+.x-docked-top .x-has-badge .x-badge-el {
+    top: -8px;
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/src/Button.scss:63 */
+.x-has-badge .x-badge-el {
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    text-align: center;
+    display: block;
+    overflow: hidden;
+    box-shadow: 2px 2px 5px 0 rgba(0, 0, 0, 0.12), 2px 2px 5px 0 rgba(0, 0, 0, 0.08);
+    z-index: 1;
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/src/Toolbar.scss:1 */
+.x-toolbar-body-el {
+    overflow: visible;
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/src/Toolbar.scss:6 */
+.x-toolbar-body-el > .x-title {
+    transition: 0.25s padding ease-out;
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/src/Panel.scss:3 */
+.x-panelheader .x-field {
+    background-color: transparent;
+    border-bottom-color: rgba(255, 255, 255, 0.38);
+    border-bottom-color: var(--reverse-disabled-color);
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/src/Panel.scss:7 */
+.x-panelheader .x-field .x-label-el {
+    color: #2196f3;
+    color: var(--accent-color);
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/src/Panel.scss:11 */
+.x-panelheader .x-field.x-focused {
+    border-bottom-color: #2196f3;
+    border-bottom-color: var(--accent-color);
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/src/Panel.scss:17 */
+.x-panelheader .x-input .x-cleartrigger .x-icon-el {
+    color: #fff;
+    color: var(--base-foreground-color);
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/src/Panel.scss:22 */
+.x-panelheader .x-input .x-input-el {
+    -webkit-text-fill-color: #fff;
+    -webkit-text-fill-color: var(--base-foreground-color);
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/src/Panel.scss:28 */
+.x-panelheader .x-toggleslider.x-on {
+    background-color: #6ab8f7;
+    background-color: var(--accent-pressed-color);
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/src/Panel.scss:32 */
+.x-panelheader .x-toggleslider.x-on .x-thumb:after {
+    background-color: #2196f3;
+    background-color: var(--accent-color);
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/src/dataview/SimpleListItem.scss:1 */
+.x-listitem-disclosure .x-icon-el {
+    transition: background-color 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/src/dataview/IndexBar.scss:1 */
+.x-indexbar-indicator {
+    box-shadow: 2px 2px 5px 0 rgba(0, 0, 0, 0.18), 2px 2px 5px 0 rgba(0, 0, 0, 0.12);
+    z-index: 2;
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/src/plugin/dd/DragDrop.scss:2 */
+.x-proxy-drag-el:before {
+    /* Roboto uses ligatures.  Android and IE seem to need this */
+    /* Roboto uses ligatures.  Android and IE seem to need this */
+    font-feature-settings: 'liga';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/src/grid/plugin/HeaderReorder.scss:3 */
+.x-header-drop-indicator-before:before,
+.x-header-drop-indicator-before:after,
+.x-header-drop-indicator-after:before,
+.x-header-drop-indicator-after:after {
+    /* Roboto uses ligatures.  Android and IE seem to need this */
+    /* Roboto uses ligatures.  Android and IE seem to need this */
+    font-feature-settings: 'liga';
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/packages/remote/theme-bpc-modern/sass/src/Component.scss:1 */
+@font-face {
+    font-family: 'Lato';
+    src: url('fonts/Lato/Lato-Light.ttf') format('truetype');
+    /* Safari, Android, iOS */
+    font-weight: normal;
+    font-style: normal;
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/packages/remote/theme-bpc-modern/sass/src/Component.scss:8 */
+@font-face {
+    font-family: 'Lato';
+    src: url('fonts/Lato/Lato-LightItalic.ttf') format('truetype');
+    /* Safari, Android, iOS */
+    font-weight: normal;
+    font-style: italic;
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/packages/remote/theme-bpc-modern/sass/src/Component.scss:15 */
+@font-face {
+    font-family: 'Lato';
+    src: url('fonts/Lato/Lato-Regular.ttf') format('truetype');
+    /* Safari, Android, iOS */
+    font-weight: bold;
+    font-style: normal;
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/packages/remote/theme-bpc-modern/sass/src/Component.scss:22 */
+@font-face {
+    font-family: 'Lato';
+    src: url('fonts/Lato/Lato-Italic.ttf') format('truetype');
+    /* Safari, Android, iOS */
+    font-weight: bold;
+    font-style: italic;
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/app/Application.scss:9 */
+.x-fa::before,
+.x-fal::before {
+    font-family: 'Font Awesome 5 Pro' !important;
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/app/Application.scss:15 */
+.error-window .x-panelheader .x-panelheader-body-el {
+    background-color: #ee5252;
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/app/Application.scss:19 */
+.error-window .x-icon-el,
+.error-window .x-text-el {
+    color: #fff !important;
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/app/Application.scss:23 */
+.error-window .x-innerhtml {
+    margin: 3px;
+    line-height: 19px !important;
+    font: bold 1rem/16px Lato, sans-serif;
+    color: var(--alert-color);
+}
+/* /home/benbaute/Documents/workspace/bpc-forms-renderer/app/Application.scss:32 */
+@media print {
+    /* /home/benbaute/Documents/workspace/bpc-forms-renderer/app/Application.scss:34 */
+    .formsRendererMain {
+        position: static !important;
+    }
+    /* /home/benbaute/Documents/workspace/bpc-forms-renderer/app/Application.scss:38 */
+    html.x-fixed-viewport,
+    .x-fixed-viewport > body {
+        position: static !important;
+        width: auto;
+        height: auto;
+    }
+    /* /home/benbaute/Documents/workspace/bpc-forms-renderer/app/Application.scss:46 */
+    .x-trigger {
+        display: none;
+    }
+    /* /home/benbaute/Documents/workspace/bpc-forms-renderer/app/Application.scss:51 */
+    .x-container-body-el {
+        -ms-overflow-style: none;
+        scrollbar-width: none;
+    }
+    /* /home/benbaute/Documents/workspace/bpc-forms-renderer/app/Application.scss:55 */
+    .x-container-body-el::-webkit-scrollbar {
+        display: none;
+    }
+}
