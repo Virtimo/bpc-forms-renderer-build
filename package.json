@@ -1,5 +1,5 @@
 {
-  "name": "bpc-forms-renderer-build",
+  "name": "@virtimo/bpc-forms-renderer-build",
   "version": "4.3.0",
   "description": "Build of Forms Renderer for BPC Forms",
   "main": "app.js",
