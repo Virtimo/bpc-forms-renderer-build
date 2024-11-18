@@ -7,7 +7,6 @@
   "registry": "https://npm.pkg.github.com"
 },
   "scripts": {
-    "publish": "npm publish"
   },
   "author": "Virtimo AG",
   "license": "UNLICENSED"
