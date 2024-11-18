@@ -1,0 +1,14 @@
+{
+  "name": "bpc-forms-renderer-build",
+  "version": "4.3.0",
+  "description": "Build of Forms Renderer for BPC Forms",
+  "main": "app.js",
+  "publishConfig": {
+  "registry": "https://npm.pkg.github.com"
+},
+  "scripts": {
+    "publish": "npm publish"
+  },
+  "author": "Virtimo AG",
+  "license": "UNLICENSED"
+}
