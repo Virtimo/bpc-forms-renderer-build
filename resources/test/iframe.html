@@ -57,19 +57,23 @@
                                                             "label": "Iframe",
                                                             "components": [
                                                             {
-                                                                "value":"${/data/welcomeMsg}",
+                                                                "value":"{data.welcomeMsg}",
                                                                 "type": "html",
                                                                 "id":"htmlField"
                                                                 },
                                                                 {
                                                                     "id": "empty",
                                                                     "type": "textfield",
-                                                                    "value":"${/data/empty}"
+                                                                    "value":"{data.empty}"
                                                                 },
                                                                 {
                                                                     "type": "textfield",
                                                                     "id": "tooShortText",
-                                                                    "value": "${/data/textValue}"
+                                                                    "value": "{data.textValue}"
+                                                                },
+                                                                {
+                                                                    "type": "textfield",
+                                                                    "value": "/data/textValue"
                                                                 },
                                                                 {
                                                                     "id": "reset",

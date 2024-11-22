@@ -3,27 +3,60 @@ $jscomp.scope = {};
 $jscomp.ASSUME_ES5 = false;
 $jscomp.ASSUME_NO_NATIVE_MAP = false;
 $jscomp.ASSUME_NO_NATIVE_SET = false;
+$jscomp.SIMPLE_FROUND_POLYFILL = false;
+$jscomp.ISOLATE_POLYFILLS = false;
+$jscomp.FORCE_POLYFILL_PROMISE = false;
+$jscomp.FORCE_POLYFILL_PROMISE_WHEN_NO_UNHANDLED_REJECTION = false;
 $jscomp.defineProperty = $jscomp.ASSUME_ES5 || typeof Object.defineProperties == 'function' ? Object.defineProperty : function(target, property, descriptor) {
-  descriptor = descriptor;
   if (target == Array.prototype || target == Object.prototype) {
-    return;
+    return target;
   }
   target[property] = descriptor.value;
+  return target;
 };
-$jscomp.getGlobal = function(maybeGlobal) {
-  return typeof window != 'undefined' && window === maybeGlobal ? maybeGlobal : typeof global != 'undefined' && global != null ? global : maybeGlobal;
+$jscomp.getGlobal = function(passedInThis) {
+  var possibleGlobals = ['object' == typeof globalThis && globalThis, passedInThis, 'object' == typeof window && window, 'object' == typeof self && self, 'object' == typeof global && global,];
+  for (var i = 0; i < possibleGlobals.length; ++i) {
+    var maybeGlobal = possibleGlobals[i];
+    if (maybeGlobal && maybeGlobal['Math'] == Math) {
+      return maybeGlobal;
+    }
+  }
+  return {valueOf:function() {
+    throw new Error('Cannot find global object');
+  }}.valueOf();
 };
 $jscomp.global = $jscomp.getGlobal(this);
+$jscomp.IS_SYMBOL_NATIVE = typeof Symbol === 'function' && typeof Symbol('x') === 'symbol';
+$jscomp.TRUST_ES6_POLYFILLS = !$jscomp.ISOLATE_POLYFILLS || $jscomp.IS_SYMBOL_NATIVE;
+$jscomp.polyfills = {};
+$jscomp.propertyToPolyfillSymbol = {};
+$jscomp.POLYFILL_PREFIX = '$jscp$';
+var $jscomp$lookupPolyfilledValue = function(target, property) {
+  var obfuscatedName = $jscomp.propertyToPolyfillSymbol[property];
+  if (obfuscatedName == null) {
+    return target[property];
+  }
+  var polyfill = target[obfuscatedName];
+  return polyfill !== undefined ? polyfill : target[property];
+};
 $jscomp.polyfill = function(target, polyfill, fromLang, toLang) {
   if (!polyfill) {
     return;
   }
+  if ($jscomp.ISOLATE_POLYFILLS) {
+    $jscomp.polyfillIsolated(target, polyfill, fromLang, toLang);
+  } else {
+    $jscomp.polyfillUnisolated(target, polyfill, fromLang, toLang);
+  }
+};
+$jscomp.polyfillUnisolated = function(target, polyfill, fromLang, toLang) {
   var obj = $jscomp.global;
   var split = target.split('.');
   for (var i = 0; i < split.length - 1; i++) {
     var key = split[i];
     if (!(key in obj)) {
-      obj[key] = {};
+      return;
     }
     obj = obj[key];
   }
@@ -35,102 +68,163 @@ $jscomp.polyfill = function(target, polyfill, fromLang, toLang) {
   }
   $jscomp.defineProperty(obj, property, {configurable:true, writable:true, value:impl});
 };
+$jscomp.polyfillIsolated = function(target, polyfill, fromLang, toLang) {
+  var split = target.split('.');
+  var isSimpleName = split.length === 1;
+  var root = split[0];
+  var ownerObject;
+  if (!isSimpleName && root in $jscomp.polyfills) {
+    ownerObject = $jscomp.polyfills;
+  } else {
+    ownerObject = $jscomp.global;
+  }
+  for (var i = 0; i < split.length - 1; i++) {
+    var key = split[i];
+    if (!(key in ownerObject)) {
+      return;
+    }
+    ownerObject = ownerObject[key];
+  }
+  var property = split[split.length - 1];
+  var nativeImpl = $jscomp.IS_SYMBOL_NATIVE && fromLang === 'es6' ? ownerObject[property] : null;
+  var impl = polyfill(nativeImpl);
+  if (impl == null) {
+    return;
+  }
+  if (isSimpleName) {
+    $jscomp.defineProperty($jscomp.polyfills, property, {configurable:true, writable:true, value:impl});
+  } else if (impl !== nativeImpl) {
+    if ($jscomp.propertyToPolyfillSymbol[property] === undefined) {
+      var BIN_ID = Math.random() * 1e9 >>> 0;
+      $jscomp.propertyToPolyfillSymbol[property] = $jscomp.IS_SYMBOL_NATIVE ? $jscomp.global['Symbol'](property) : $jscomp.POLYFILL_PREFIX + BIN_ID + '$' + property;
+    }
+    var obfuscatedName = $jscomp.propertyToPolyfillSymbol[property];
+    $jscomp.defineProperty(ownerObject, obfuscatedName, {configurable:true, writable:true, value:impl});
+  }
+};
 $jscomp.polyfill('Array.prototype.copyWithin', function(orig) {
   if (orig) {
     return orig;
   }
   var polyfill = function(target, start, opt_end) {
     var len = this.length;
-    target = Number(target);
-    start = Number(start);
-    opt_end = Number(opt_end != null ? opt_end : len);
-    if (target < start) {
-      opt_end = Math.min(opt_end, len);
-      while (start < opt_end) {
-        if (start in this) {
-          this[target++] = this[start++];
+    target = toInteger(target);
+    start = toInteger(start);
+    var end = opt_end === undefined ? len : toInteger(opt_end);
+    var to = target < 0 ? Math.max(len + target, 0) : Math.min(target, len);
+    var from = start < 0 ? Math.max(len + start, 0) : Math.min(start, len);
+    var final = end < 0 ? Math.max(len + end, 0) : Math.min(end, len);
+    if (to < from) {
+      while (from < final) {
+        if (from in this) {
+          this[to++] = this[from++];
         } else {
-          delete this[target++];
-          start++;
+          delete this[to++];
+          from++;
         }
       }
     } else {
-      opt_end = Math.min(opt_end, len + start - target);
-      target += opt_end - start;
-      while (opt_end > start) {
-        if (--opt_end in this) {
-          this[--target] = this[opt_end];
+      final = Math.min(final, len + from - to);
+      to += final - from;
+      while (final > from) {
+        if (--final in this) {
+          this[--to] = this[final];
         } else {
-          delete this[target];
+          delete this[--to];
         }
       }
     }
     return this;
   };
+  function toInteger(arg) {
+    var n = Number(arg);
+    if (n === Infinity || n === -Infinity) {
+      return n;
+    }
+    return n | 0;
+  }
   return polyfill;
 }, 'es6', 'es3');
-$jscomp.SYMBOL_PREFIX = 'jscomp_symbol_';
-$jscomp.initSymbol = function() {
-  $jscomp.initSymbol = function() {
-  };
-  if (!$jscomp.global['Symbol']) {
-    $jscomp.global['Symbol'] = $jscomp.Symbol;
-  }
-};
-$jscomp.Symbol = function() {
-  var counter = 0;
-  function Symbol(opt_description) {
-    return $jscomp.SYMBOL_PREFIX + (opt_description || '') + counter++;
-  }
-  return Symbol;
-}();
-$jscomp.initSymbolIterator = function() {
-  $jscomp.initSymbol();
-  var symbolIterator = $jscomp.global['Symbol'].iterator;
-  if (!symbolIterator) {
-    symbolIterator = $jscomp.global['Symbol'].iterator = $jscomp.global['Symbol']('iterator');
-  }
-  if (typeof Array.prototype[symbolIterator] != 'function') {
-    $jscomp.defineProperty(Array.prototype, symbolIterator, {configurable:true, writable:true, value:function() {
-      return $jscomp.arrayIterator(this);
-    }});
-  }
-  $jscomp.initSymbolIterator = function() {
-  };
-};
-$jscomp.arrayIterator = function(array) {
+$jscomp.arrayIteratorImpl = function(array) {
   var index = 0;
-  return $jscomp.iteratorPrototype(function() {
+  return function() {
     if (index < array.length) {
-      return {done:false, value:array[index++]};
+      return {done:false, value:array[index++],};
     } else {
       return {done:true};
     }
-  });
+  };
 };
+$jscomp.arrayIterator = function(array) {
+  return {next:$jscomp.arrayIteratorImpl(array)};
+};
+$jscomp.initSymbol = function() {
+};
+$jscomp.polyfill('Symbol', function(orig) {
+  if (orig) {
+    return orig;
+  }
+  var SymbolClass = function(id, opt_description) {
+    this.$jscomp$symbol$id_ = id;
+    this.description;
+    $jscomp.defineProperty(this, 'description', {configurable:true, writable:true, value:opt_description});
+  };
+  SymbolClass.prototype.toString = function() {
+    return this.$jscomp$symbol$id_;
+  };
+  var BIN_ID = Math.random() * 1e9 >>> 0;
+  var SYMBOL_PREFIX = 'jscomp_symbol_' + BIN_ID + '_';
+  var counter = 0;
+  var symbolPolyfill = function(opt_description) {
+    if (this instanceof symbolPolyfill) {
+      throw new TypeError('Symbol is not a constructor');
+    }
+    return new SymbolClass(SYMBOL_PREFIX + (opt_description || '') + '_' + counter++, opt_description);
+  };
+  return symbolPolyfill;
+}, 'es6', 'es3');
+$jscomp.polyfill('Symbol.iterator', function(orig) {
+  if (orig) {
+    return orig;
+  }
+  var symbolIterator = Symbol('Symbol.iterator');
+  var arrayLikes = ['Array', 'Int8Array', 'Uint8Array', 'Uint8ClampedArray', 'Int16Array', 'Uint16Array', 'Int32Array', 'Uint32Array', 'Float32Array', 'Float64Array'];
+  for (var i = 0; i < arrayLikes.length; i++) {
+    var ArrayLikeCtor = $jscomp.global[arrayLikes[i]];
+    if (typeof ArrayLikeCtor === 'function' && typeof ArrayLikeCtor.prototype[symbolIterator] != 'function') {
+      $jscomp.defineProperty(ArrayLikeCtor.prototype, symbolIterator, {configurable:true, writable:true, value:function() {
+        return $jscomp.iteratorPrototype($jscomp.arrayIteratorImpl(this));
+      }});
+    }
+  }
+  return symbolIterator;
+}, 'es6', 'es3');
+$jscomp.polyfill('Symbol.asyncIterator', function(orig) {
+  if (orig) {
+    return orig;
+  }
+  return Symbol('Symbol.asyncIterator');
+}, 'es9', 'es3');
 $jscomp.iteratorPrototype = function(next) {
-  $jscomp.initSymbolIterator();
   var iterator = {next:next};
-  iterator[$jscomp.global['Symbol'].iterator] = function() {
+  iterator[Symbol.iterator] = function() {
     return this;
   };
   return iterator;
 };
 $jscomp.iteratorFromArray = function(array, transform) {
-  $jscomp.initSymbolIterator();
   if (array instanceof String) {
     array = array + '';
   }
   var i = 0;
+  var done = false;
   var iter = {next:function() {
-    if (i < array.length) {
+    if (!done && i < array.length) {
       var index = i++;
       return {value:transform(index, array[index]), done:false};
     }
-    iter.next = function() {
-      return {done:true, value:void 0};
-    };
-    return iter.next();
+    done = true;
+    return {done:true, value:void 0};
   }};
   iter[Symbol.iterator] = function() {
     return iter;
@@ -202,17 +296,54 @@ $jscomp.polyfill('Array.prototype.findIndex', function(orig) {
   };
   return polyfill;
 }, 'es6', 'es3');
+$jscomp.polyfill('Array.prototype.flat', function(orig) {
+  if (orig) {
+    return orig;
+  }
+  var flat = function(depth) {
+    depth = depth === undefined ? 1 : depth;
+    var flattened = [];
+    for (var i = 0; i < this.length; i++) {
+      var element = this[i];
+      if (Array.isArray(element) && depth > 0) {
+        var inner = Array.prototype.flat.call(element, depth - 1);
+        flattened.push.apply(flattened, inner);
+      } else {
+        flattened.push(element);
+      }
+    }
+    return flattened;
+  };
+  return flat;
+}, 'es9', 'es5');
+$jscomp.polyfill('Array.prototype.flatMap', function(orig) {
+  if (orig) {
+    return orig;
+  }
+  var flatMap = function(callback, thisArg) {
+    var mapped = [];
+    for (var i = 0; i < this.length; i++) {
+      var result = callback.call(thisArg, this[i], i, this);
+      if (Array.isArray(result)) {
+        mapped.push.apply(mapped, result);
+      } else {
+        mapped.push(result);
+      }
+    }
+    return mapped;
+  };
+  return flatMap;
+}, 'es9', 'es5');
 $jscomp.polyfill('Array.from', function(orig) {
   if (orig) {
     return orig;
   }
   var polyfill = function(arrayLike, opt_mapFn, opt_thisArg) {
-    $jscomp.initSymbolIterator();
     opt_mapFn = opt_mapFn != null ? opt_mapFn : function(x) {
       return x;
     };
     var result = [];
-    var iteratorFunction = arrayLike[Symbol.iterator];
+    var iteratorFunction = typeof Symbol != 'undefined' && Symbol.iterator && arrayLike[Symbol.iterator];
     if (typeof iteratorFunction == 'function') {
       arrayLike = iteratorFunction.call(arrayLike);
       var next;
@@ -299,273 +430,232 @@ $jscomp.polyfill('Array.prototype.values', function(orig) {
   return polyfill;
 }, 'es8', 'es3');
 $jscomp.makeIterator = function(iterable) {
-  $jscomp.initSymbolIterator();
-  var iteratorFunction = iterable[Symbol.iterator];
+  var iteratorFunction = typeof Symbol != 'undefined' && Symbol.iterator && iterable[Symbol.iterator];
   return iteratorFunction ? iteratorFunction.call(iterable) : $jscomp.arrayIterator(iterable);
 };
-$jscomp.FORCE_POLYFILL_PROMISE = false;
-$jscomp.polyfill('Promise', function(NativePromise) {
-  if (NativePromise && !$jscomp.FORCE_POLYFILL_PROMISE) {
-    return NativePromise;
+$jscomp.makeAsyncIterator = function(iterable) {
+  var asyncIteratorFunction = iterable[Symbol.asyncIterator];
+  if (asyncIteratorFunction !== undefined) {
+    return asyncIteratorFunction.call(iterable);
   }
-  function AsyncExecutor() {
-    this.batch_ = null;
-  }
-  AsyncExecutor.prototype.asyncExecute = function(f) {
-    if (this.batch_ == null) {
-      this.batch_ = [];
-      this.asyncExecuteBatch_();
-    }
-    this.batch_.push(f);
+  return new $jscomp.AsyncIteratorFromSyncWrapper($jscomp.makeIterator(iterable));
+};
+$jscomp.AsyncIteratorFromSyncWrapper = function(iterator) {
+  this[Symbol.asyncIterator] = function() {
     return this;
   };
-  AsyncExecutor.prototype.asyncExecuteBatch_ = function() {
-    var self = this;
-    this.asyncExecuteFunction(function() {
-      self.executeBatch_();
-    });
+  this[Symbol.iterator] = function() {
+    return iterator;
   };
-  var nativeSetTimeout = $jscomp.global['setTimeout'];
-  AsyncExecutor.prototype.asyncExecuteFunction = function(f) {
-    nativeSetTimeout(f, 0);
+  this.next = function(param) {
+    return Promise.resolve(iterator.next(param));
   };
-  AsyncExecutor.prototype.executeBatch_ = function() {
-    while (this.batch_ && this.batch_.length) {
-      var executingBatch = this.batch_;
-      this.batch_ = [];
-      for (var i = 0; i < executingBatch.length; ++i) {
-        var f = executingBatch[i];
-        executingBatch[i] = null;
-        try {
-          f();
-        } catch (error) {
-          this.asyncThrow_(error);
-        }
-      }
-    }
-    this.batch_ = null;
-  };
-  AsyncExecutor.prototype.asyncThrow_ = function(exception) {
-    this.asyncExecuteFunction(function() {
-      throw exception;
-    });
-  };
-  var PromiseState = {PENDING:0, FULFILLED:1, REJECTED:2};
-  var PolyfillPromise = function(executor) {
-    this.state_ = PromiseState.PENDING;
-    this.result_ = undefined;
-    this.onSettledCallbacks_ = [];
-    var resolveAndReject = this.createResolveAndReject_();
-    try {
-      executor(resolveAndReject.resolve, resolveAndReject.reject);
-    } catch (e) {
-      resolveAndReject.reject(e);
-    }
-  };
-  PolyfillPromise.prototype.createResolveAndReject_ = function() {
-    var thisPromise = this;
-    var alreadyCalled = false;
-    function firstCallWins(method) {
-      return function(x) {
-        if (!alreadyCalled) {
-          alreadyCalled = true;
-          method.call(thisPromise, x);
-        }
-      };
-    }
-    return {resolve:firstCallWins(this.resolveTo_), reject:firstCallWins(this.reject_)};
-  };
-  PolyfillPromise.prototype.resolveTo_ = function(value) {
-    if (value === this) {
-      this.reject_(new TypeError('A Promise cannot resolve to itself'));
-    } else {
-      if (value instanceof PolyfillPromise) {
-        this.settleSameAsPromise_(value);
-      } else {
-        if (isObject(value)) {
-          this.resolveToNonPromiseObj_(value);
-        } else {
-          this.fulfill_(value);
-        }
-      }
-    }
-  };
-  PolyfillPromise.prototype.resolveToNonPromiseObj_ = function(obj) {
-    var thenMethod = undefined;
-    try {
-      thenMethod = obj.then;
-    } catch (error) {
-      this.reject_(error);
-      return;
-    }
-    if (typeof thenMethod == 'function') {
-      this.settleSameAsThenable_(thenMethod, obj);
-    } else {
-      this.fulfill_(obj);
-    }
-  };
-  function isObject(value) {
-    switch(typeof value) {
-      case 'object':
-        return value != null;
-      case 'function':
-        return true;
-      default:
-        return false;
+  if (iterator['throw'] !== undefined) {
+    this['throw'] = function(param) {
+      return Promise.resolve(iterator['throw'](param));
+    };
+  }
+  if (iterator['return'] !== undefined) {
+    this['return'] = function(param) {
+      return Promise.resolve(iterator['return'](param));
+    };
+  }
+};
+$jscomp.AsyncGeneratorWrapper$ActionEnum = {YIELD_VALUE:0, YIELD_STAR:1, AWAIT_VALUE:2,};
+$jscomp.AsyncGeneratorWrapper$ActionRecord = function(action, value) {
+  this.action = action;
+  this.value = value;
+};
+$jscomp.AsyncGeneratorWrapper$GeneratorMethod = {NEXT:'next', THROW:'throw', RETURN:'return',};
+$jscomp.AsyncGeneratorWrapper$ExecutionFrame_ = function(method, param, resolve, reject) {
+  this.method = method;
+  this.param = param;
+  this.resolve = resolve;
+  this.reject = reject;
+};
+$jscomp.AsyncGeneratorWrapper$ExecutionNode_ = function(frame, next) {
+  this.frame = frame;
+  this.next = next;
+};
+$jscomp.AsyncGeneratorWrapper$ExecutionQueue_ = function() {
+  this.head_ = null;
+  this.tail_ = null;
+};
+$jscomp.AsyncGeneratorWrapper$ExecutionQueue_.prototype.isEmpty = function() {
+  return this.head_ === null;
+};
+$jscomp.AsyncGeneratorWrapper$ExecutionQueue_.prototype.first = function() {
+  if (this.head_) {
+    return this.head_.frame;
+  } else {
+    throw new Error('no frames in executionQueue');
+  }
+};
+$jscomp.AsyncGeneratorWrapper$ExecutionQueue_.prototype.drop = function() {
+  if (this.head_) {
+    this.head_ = this.head_.next;
+    if (!this.head_) {
+      this.tail_ = null;
     }
   }
-  PolyfillPromise.prototype.reject_ = function(reason) {
-    this.settle_(PromiseState.REJECTED, reason);
+};
+$jscomp.AsyncGeneratorWrapper$ExecutionQueue_.prototype.enqueue = function(newFrame) {
+  var node = new $jscomp.AsyncGeneratorWrapper$ExecutionNode_(newFrame, null);
+  if (this.tail_) {
+    this.tail_.next = node;
+    this.tail_ = node;
+  } else {
+    this.head_ = node;
+    this.tail_ = node;
+  }
+};
+$jscomp.AsyncGeneratorWrapper = function(generator) {
+  this.generator_ = generator;
+  this.delegate_ = null;
+  this.executionQueue_ = new $jscomp.AsyncGeneratorWrapper$ExecutionQueue_();
+  this[Symbol.asyncIterator] = function() {
+    return this;
   };
-  PolyfillPromise.prototype.fulfill_ = function(value) {
-    this.settle_(PromiseState.FULFILLED, value);
+  var self = this;
+  this.boundHandleDelegateResult_ = function(record) {
+    self.handleDelegateResult_(record);
   };
-  PolyfillPromise.prototype.settle_ = function(settledState, valueOrReason) {
-    if (this.state_ != PromiseState.PENDING) {
-      throw new Error('Cannot settle(' + settledState + ', ' + valueOrReason + '): Promise already settled in state' + this.state_);
+  this.boundHandleDelegateError_ = function(thrownError) {
+    self.handleDelegateError_(thrownError);
+  };
+  this.boundRejectAndClose_ = function(err) {
+    self.rejectAndClose_(err);
+  };
+};
+$jscomp.AsyncGeneratorWrapper.prototype.enqueueMethod_ = function(method, param) {
+  var self = this;
+  return new Promise(function(resolve, reject) {
+    var wasEmpty = self.executionQueue_.isEmpty();
+    self.executionQueue_.enqueue(new $jscomp.AsyncGeneratorWrapper$ExecutionFrame_(method, param, resolve, reject));
+    if (wasEmpty) {
+      self.runFrame_();
     }
-    this.state_ = settledState;
-    this.result_ = valueOrReason;
-    this.executeOnSettledCallbacks_();
-  };
-  PolyfillPromise.prototype.executeOnSettledCallbacks_ = function() {
-    if (this.onSettledCallbacks_ != null) {
-      for (var i = 0; i < this.onSettledCallbacks_.length; ++i) {
-        asyncExecutor.asyncExecute(this.onSettledCallbacks_[i]);
-      }
-      this.onSettledCallbacks_ = null;
-    }
-  };
-  var asyncExecutor = new AsyncExecutor;
-  PolyfillPromise.prototype.settleSameAsPromise_ = function(promise) {
-    var methods = this.createResolveAndReject_();
-    promise.callWhenSettled_(methods.resolve, methods.reject);
-  };
-  PolyfillPromise.prototype.settleSameAsThenable_ = function(thenMethod, thenable) {
-    var methods = this.createResolveAndReject_();
+  });
+};
+$jscomp.AsyncGeneratorWrapper.prototype.next = function(opt_value) {
+  return this.enqueueMethod_($jscomp.AsyncGeneratorWrapper$GeneratorMethod.NEXT, opt_value);
+};
+$jscomp.AsyncGeneratorWrapper.prototype["return"] = function(value) {
+  return this.enqueueMethod_($jscomp.AsyncGeneratorWrapper$GeneratorMethod.RETURN, new $jscomp.AsyncGeneratorWrapper$ActionRecord($jscomp.AsyncGeneratorWrapper$ActionEnum.YIELD_VALUE, value));
+};
+$jscomp.AsyncGeneratorWrapper.prototype["throw"] = function(exception) {
+  return this.enqueueMethod_($jscomp.AsyncGeneratorWrapper$GeneratorMethod.THROW, exception);
+};
+$jscomp.AsyncGeneratorWrapper.prototype.runFrame_ = function() {
+  if (!this.executionQueue_.isEmpty()) {
     try {
-      thenMethod.call(thenable, methods.resolve, methods.reject);
-    } catch (error) {
-      methods.reject(error);
-    }
-  };
-  PolyfillPromise.prototype.then = function(onFulfilled, onRejected) {
-    var resolveChild;
-    var rejectChild;
-    var childPromise = new PolyfillPromise(function(resolve, reject) {
-      resolveChild = resolve;
-      rejectChild = reject;
-    });
-    function createCallback(paramF, defaultF) {
-      if (typeof paramF == 'function') {
-        return function(x) {
-          try {
-            resolveChild(paramF(x));
-          } catch (error) {
-            rejectChild(error);
-          }
-        };
+      if (this.delegate_) {
+        this.runDelegateFrame_();
       } else {
-        return defaultF;
+        this.runGeneratorFrame_();
       }
+    } catch (err) {
+      this.rejectAndClose_(err);
     }
-    this.callWhenSettled_(createCallback(onFulfilled, resolveChild), createCallback(onRejected, rejectChild));
-    return childPromise;
-  };
-  PolyfillPromise.prototype['catch'] = function(onRejected) {
-    return this.then(undefined, onRejected);
-  };
-  PolyfillPromise.prototype.callWhenSettled_ = function(onFulfilled, onRejected) {
-    var thisPromise = this;
-    function callback() {
-      switch(thisPromise.state_) {
-        case PromiseState.FULFILLED:
-          onFulfilled(thisPromise.result_);
-          break;
-        case PromiseState.REJECTED:
-          onRejected(thisPromise.result_);
-          break;
+  }
+};
+$jscomp.AsyncGeneratorWrapper.prototype.runGeneratorFrame_ = function() {
+  var self = this;
+  var frame = this.executionQueue_.first();
+  try {
+    var genRec = this.generator_[frame.method](frame.param);
+    if (genRec.value instanceof $jscomp.AsyncGeneratorWrapper$ActionRecord) {
+      switch(genRec.value.action) {
+        case $jscomp.AsyncGeneratorWrapper$ActionEnum.YIELD_VALUE:
+          Promise.resolve(genRec.value.value).then(function(resolvedValue) {
+            frame.resolve({value:resolvedValue, done:genRec.done});
+            self.executionQueue_.drop();
+            self.runFrame_();
+          }, function(e) {
+            frame.reject(e);
+            self.executionQueue_.drop();
+            self.runFrame_();
+          })["catch"](this.boundRejectAndClose_);
+          return;
+        case $jscomp.AsyncGeneratorWrapper$ActionEnum.YIELD_STAR:
+          self.delegate_ = $jscomp.makeAsyncIterator(genRec.value.value);
+          frame.method = $jscomp.AsyncGeneratorWrapper$GeneratorMethod.NEXT;
+          frame.param = undefined;
+          self.runFrame_();
+          return;
+        case $jscomp.AsyncGeneratorWrapper$ActionEnum.AWAIT_VALUE:
+          Promise.resolve(genRec.value.value).then(function(resolvedValue) {
+            frame.method = $jscomp.AsyncGeneratorWrapper$GeneratorMethod.NEXT;
+            frame.param = resolvedValue;
+            self.runFrame_();
+          }, function(thrownErr) {
+            frame.method = $jscomp.AsyncGeneratorWrapper$GeneratorMethod.THROW;
+            frame.param = thrownErr;
+            self.runFrame_();
+          })["catch"](this.boundRejectAndClose_);
+          return;
         default:
-          throw new Error('Unexpected state: ' + thisPromise.state_);
+          throw new Error('Unrecognized AsyncGeneratorWrapper$ActionEnum');
       }
-    }
-    if (this.onSettledCallbacks_ == null) {
-      asyncExecutor.asyncExecute(callback);
     } else {
-      this.onSettledCallbacks_.push(callback);
+      frame.resolve(genRec);
+      self.executionQueue_.drop();
+      self.runFrame_();
     }
-  };
-  function resolvingPromise(opt_value) {
-    if (opt_value instanceof PolyfillPromise) {
-      return opt_value;
-    } else {
-      return new PolyfillPromise(function(resolve, reject) {
-        resolve(opt_value);
-      });
-    }
+  } catch (e) {
+    frame.reject(e);
+    self.executionQueue_.drop();
+    self.runFrame_();
   }
-  PolyfillPromise['resolve'] = resolvingPromise;
-  PolyfillPromise['reject'] = function(opt_reason) {
-    return new PolyfillPromise(function(resolve, reject) {
-      reject(opt_reason);
-    });
-  };
-  PolyfillPromise['race'] = function(thenablesOrValues) {
-    return new PolyfillPromise(function(resolve, reject) {
-      var iterator = $jscomp.makeIterator(thenablesOrValues);
-      for (var iterRec = iterator.next(); !iterRec.done; iterRec = iterator.next()) {
-        resolvingPromise(iterRec.value).callWhenSettled_(resolve, reject);
-      }
-    });
-  };
-  PolyfillPromise['all'] = function(thenablesOrValues) {
-    var iterator = $jscomp.makeIterator(thenablesOrValues);
-    var iterRec = iterator.next();
-    if (iterRec.done) {
-      return resolvingPromise([]);
-    } else {
-      return new PolyfillPromise(function(resolveAll, rejectAll) {
-        var resultsArray = [];
-        var unresolvedCount = 0;
-        function onFulfilled(i) {
-          return function(ithResult) {
-            resultsArray[i] = ithResult;
-            unresolvedCount--;
-            if (unresolvedCount == 0) {
-              resolveAll(resultsArray);
-            }
-          };
-        }
-        do {
-          resultsArray.push(undefined);
-          unresolvedCount++;
-          resolvingPromise(iterRec.value).callWhenSettled_(onFulfilled(resultsArray.length - 1), rejectAll);
-          iterRec = iterator.next();
-        } while (!iterRec.done);
-      });
-    }
-  };
-  return PolyfillPromise;
-}, 'es6', 'es3');
-$jscomp.polyfill('Promise.prototype.finally', function(orig) {
-  if (orig) {
-    return orig;
+};
+$jscomp.AsyncGeneratorWrapper.prototype.runDelegateFrame_ = function() {
+  if (!this.delegate_) {
+    throw new Error('no delegate to perform execution');
   }
-  var polyfill = function(onFinally) {
-    return this.then(function(value) {
-      var promise = Promise.resolve(onFinally());
-      return promise.then(function() {
-        return value;
-      });
-    }, function(reason) {
-      var promise = Promise.resolve(onFinally());
-      return promise.then(function() {
-        throw reason;
-      });
-    });
-  };
-  return polyfill;
-}, 'es9', 'es3');
+  var frame = this.executionQueue_.first();
+  if (frame.method in this.delegate_) {
+    try {
+      this.delegate_[frame.method](frame.param).then(this.boundHandleDelegateResult_, this.boundHandleDelegateError_)["catch"](this.boundRejectAndClose_);
+    } catch (err) {
+      this.handleDelegateError_(err);
+    }
+  } else {
+    this.delegate_ = null;
+    this.runFrame_();
+  }
+};
+$jscomp.AsyncGeneratorWrapper.prototype.handleDelegateResult_ = function(record) {
+  var frame = this.executionQueue_.first();
+  if (record.done === true) {
+    this.delegate_ = null;
+    frame.method = $jscomp.AsyncGeneratorWrapper$GeneratorMethod.NEXT;
+    frame.param = record.value;
+    this.runFrame_();
+  } else {
+    frame.resolve({value:record.value, done:false});
+    this.executionQueue_.drop();
+    this.runFrame_();
+  }
+};
+$jscomp.AsyncGeneratorWrapper.prototype.handleDelegateError_ = function(thrownError) {
+  var frame = this.executionQueue_.first();
+  this.delegate_ = null;
+  frame.method = $jscomp.AsyncGeneratorWrapper$GeneratorMethod.THROW;
+  frame.param = thrownError;
+  this.runFrame_();
+};
+$jscomp.AsyncGeneratorWrapper.prototype.rejectAndClose_ = function(err) {
+  if (!this.executionQueue_.isEmpty()) {
+    this.executionQueue_.first().reject(err);
+    this.executionQueue_.drop();
+  }
+  if (this.delegate_ && 'return' in this.delegate_) {
+    this.delegate_['return'](undefined);
+    this.delegate_ = null;
+  }
+  this.generator_['return'](undefined);
+  this.runFrame_();
+};
 $jscomp.underscoreProtoCanBeSet = function() {
   var x = {a:true};
   var y = {};
@@ -576,7 +666,7 @@ $jscomp.underscoreProtoCanBeSet = function() {
   }
   return false;
 };
-$jscomp.setPrototypeOf = typeof Object.setPrototypeOf == 'function' ? Object.setPrototypeOf : $jscomp.underscoreProtoCanBeSet() ? function(target, proto) {
+$jscomp.setPrototypeOf = $jscomp.TRUST_ES6_POLYFILLS && typeof Object.setPrototypeOf == 'function' ? Object.setPrototypeOf : $jscomp.underscoreProtoCanBeSet() ? function(target, proto) {
   target.__proto__ = proto;
   if (target.__proto__ !== proto) {
     throw new TypeError(target + ' is not extensible');
@@ -619,7 +709,7 @@ $jscomp.generator.Context.prototype.throw_ = function(e) {
   this.abruptCompletion_ = {exception:e, isException:true};
   this.jumpToErrorHandler_();
 };
-$jscomp.generator.Context.prototype['return'] = function(value) {
+$jscomp.generator.Context.prototype["return"] = function(value) {
   this.abruptCompletion_ = {'return':value};
   this.nextAddress = this.finallyAddress_;
 };
@@ -716,7 +806,7 @@ $jscomp.generator.Context.PropertyIterator.prototype.getNext = function() {
   return null;
 };
 $jscomp.generator.Engine_ = function(program) {
-  this.context_ = new $jscomp.generator.Context;
+  this.context_ = new $jscomp.generator.Context();
   this.program_ = program;
 };
 $jscomp.generator.Engine_.prototype.next_ = function(value) {
@@ -734,9 +824,9 @@ $jscomp.generator.Engine_.prototype.return_ = function(value) {
     var returnFunction = 'return' in yieldAllIterator ? yieldAllIterator['return'] : function(v) {
       return {value:v, done:true};
     };
-    return this.yieldAllStep_(returnFunction, value, this.context_['return']);
+    return this.yieldAllStep_(returnFunction, value, this.context_["return"]);
   }
-  this.context_['return'](value);
+  this.context_["return"](value);
   return this.nextStep_();
 };
 $jscomp.generator.Engine_.prototype.throw_ = function(exception) {
@@ -785,7 +875,7 @@ $jscomp.generator.Engine_.prototype.nextStep_ = function() {
     if (abruptCompletion.isException) {
       throw abruptCompletion.exception;
     }
-    return {value:abruptCompletion['return'], done:true};
+    return {value:abruptCompletion["return"], done:true};
   }
   return {value:undefined, done:true};
 };
@@ -793,20 +883,19 @@ $jscomp.generator.Generator_ = function(engine) {
   this.next = function(opt_value) {
     return engine.next_(opt_value);
   };
-  this['throw'] = function(exception) {
+  this["throw"] = function(exception) {
     return engine.throw_(exception);
   };
-  this['return'] = function(value) {
+  this["return"] = function(value) {
     return engine.return_(value);
   };
-  $jscomp.initSymbolIterator();
   this[Symbol.iterator] = function() {
     return this;
   };
 };
 $jscomp.generator.createGenerator = function(generator, program) {
   var result = new $jscomp.generator.Generator_(new $jscomp.generator.Engine_(program));
-  if ($jscomp.setPrototypeOf) {
+  if ($jscomp.setPrototypeOf && generator.prototype) {
     $jscomp.setPrototypeOf(result, generator.prototype);
   }
   return result;
@@ -816,7 +905,7 @@ $jscomp.asyncExecutePromiseGenerator = function(generator) {
     return generator.next(value);
   }
   function passErrorToGenerator(error) {
-    return generator['throw'](error);
+    return generator["throw"](error);
   }
   return new Promise(function(resolve, reject) {
     function handleGeneratorRecord(genRec) {
@@ -835,6 +924,9 @@ $jscomp.asyncExecutePromiseGeneratorFunction = function(generatorFunction) {
 $jscomp.asyncExecutePromiseGeneratorProgram = function(program) {
   return $jscomp.asyncExecutePromiseGenerator(new $jscomp.generator.Generator_(new $jscomp.generator.Engine_(program)));
 };
+$jscomp.polyfill('globalThis', function(orig) {
+  return orig || $jscomp.global;
+}, 'es_2020', 'es3');
 $jscomp.checkEs6ConformanceViaProxy = function() {
   try {
     var proxied = {};
@@ -863,7 +955,7 @@ $jscomp.polyfill('WeakMap', function(NativeWeakMap) {
       if (map.get(x) != 2 || map.get(y) != 3) {
         return false;
       }
-      map['delete'](x);
+      map["delete"](x);
       map.set(y, 4);
       return !map.has(x) && map.get(y) == 4;
     } catch (err) {
@@ -880,18 +972,33 @@ $jscomp.polyfill('WeakMap', function(NativeWeakMap) {
     }
   }
   var prop = '$jscomp_hidden_' + Math.random();
+  function WeakMapMembership() {
+  }
+  function isValidKey(key) {
+    var type = typeof key;
+    return type === 'object' && key !== null || type === 'function';
+  }
   function insert(target) {
     if (!$jscomp.owns(target, prop)) {
-      var obj = {};
+      var obj = new WeakMapMembership();
       $jscomp.defineProperty(target, prop, {value:obj});
     }
   }
   function patch(name) {
+    if ($jscomp.ISOLATE_POLYFILLS) {
+      return;
+    }
     var prev = Object[name];
     if (prev) {
       Object[name] = function(target) {
-        insert(target);
-        return prev(target);
+        if (target instanceof WeakMapMembership) {
+          return target;
+        } else {
+          if (Object.isExtensible(target)) {
+            insert(target);
+          }
+          return prev(target);
+        }
       };
     }
   }
@@ -902,8 +1009,6 @@ $jscomp.polyfill('WeakMap', function(NativeWeakMap) {
   var PolyfillWeakMap = function(opt_iterable) {
     this.id_ = (index += Math.random() + 1).toString();
     if (opt_iterable) {
-      $jscomp.initSymbol();
-      $jscomp.initSymbolIterator();
       var iter = $jscomp.makeIterator(opt_iterable);
       var entry;
       while (!(entry = iter.next()).done) {
@@ -913,6 +1018,9 @@ $jscomp.polyfill('WeakMap', function(NativeWeakMap) {
     }
   };
   PolyfillWeakMap.prototype.set = function(key, value) {
+    if (!isValidKey(key)) {
+      throw new Error('Invalid WeakMap key');
+    }
     insert(key);
     if (!$jscomp.owns(key, prop)) {
       throw new Error('WeakMap key fail: ' + key);
@@ -921,13 +1029,13 @@ $jscomp.polyfill('WeakMap', function(NativeWeakMap) {
     return this;
   };
   PolyfillWeakMap.prototype.get = function(key) {
-    return $jscomp.owns(key, prop) ? key[prop][this.id_] : undefined;
+    return isValidKey(key) && $jscomp.owns(key, prop) ? key[prop][this.id_] : undefined;
   };
   PolyfillWeakMap.prototype.has = function(key) {
-    return $jscomp.owns(key, prop) && $jscomp.owns(key[prop], this.id_);
+    return isValidKey(key) && $jscomp.owns(key, prop) && $jscomp.owns(key[prop], this.id_);
   };
-  PolyfillWeakMap.prototype['delete'] = function(key) {
-    if (!$jscomp.owns(key, prop) || !$jscomp.owns(key[prop], this.id_)) {
+  PolyfillWeakMap.prototype["delete"] = function(key) {
+    if (!isValidKey(key) || !$jscomp.owns(key, prop) || !$jscomp.owns(key[prop], this.id_)) {
       return false;
     }
     return delete key[prop][this.id_];
@@ -976,9 +1084,7 @@ $jscomp.polyfill('Map', function(NativeMap) {
       return NativeMap;
     }
   }
-  $jscomp.initSymbol();
-  $jscomp.initSymbolIterator();
-  var idMap = new WeakMap;
+  var idMap = new WeakMap();
   var PolyfillMap = function(opt_iterable) {
     this.data_ = {};
     this.head_ = createHead();
@@ -999,7 +1105,7 @@ $jscomp.polyfill('Map', function(NativeMap) {
       r.list = this.data_[r.id] = [];
     }
     if (!r.entry) {
-      r.entry = {next:this.head_, previous:this.head_.previous, head:this.head_, key:key, value:value};
+      r.entry = {next:this.head_, previous:this.head_.previous, head:this.head_, key:key, value:value,};
       r.list.push(r.entry);
       this.head_.previous.next = r.entry;
       this.head_.previous = r.entry;
@@ -1009,7 +1115,7 @@ $jscomp.polyfill('Map', function(NativeMap) {
     }
     return this;
   };
-  PolyfillMap.prototype['delete'] = function(key) {
+  PolyfillMap.prototype["delete"] = function(key) {
     var r = maybeGetEntry(this, key);
     if (r.entry && r.list) {
       r.list.splice(r.index, 1);
@@ -1247,33 +1353,47 @@ $jscomp.polyfill('Math.expm1', function(orig) {
   };
   return polyfill;
 }, 'es6', 'es3');
+$jscomp.polyfill('Math.fround', function(orig) {
+  if (orig) {
+    return orig;
+  }
+  if ($jscomp.SIMPLE_FROUND_POLYFILL || typeof Float32Array !== 'function') {
+    return function(arg) {
+      return arg;
+    };
+  }
+  var arr = new Float32Array(1);
+  var polyfill = function(arg) {
+    arr[0] = arg;
+    return arr[0];
+  };
+  return polyfill;
+}, 'es6', 'es3');
 $jscomp.polyfill('Math.hypot', function(orig) {
   if (orig) {
     return orig;
   }
-  var polyfill = function(x, y, var_args) {
-    x = Number(x);
-    y = Number(y);
-    var i, z, sum;
-    var max = Math.max(Math.abs(x), Math.abs(y));
-    for (i = 2; i < arguments.length; i++) {
+  var polyfill = function(var_args) {
+    if (arguments.length < 2) {
+      return arguments.length ? Math.abs(arguments[0]) : 0;
+    }
+    var i, z, sum, max;
+    for (max = 0, i = 0; i < arguments.length; i++) {
       max = Math.max(max, Math.abs(arguments[i]));
     }
     if (max > 1e100 || max < 1e-100) {
       if (!max) {
         return max;
       }
-      x = x / max;
-      y = y / max;
-      sum = x * x + y * y;
-      for (i = 2; i < arguments.length; i++) {
+      sum = 0;
+      for (i = 0; i < arguments.length; i++) {
         z = Number(arguments[i]) / max;
         sum += z * z;
       }
       return Math.sqrt(sum) * max;
     } else {
-      sum = x * x + y * y;
-      for (i = 2; i < arguments.length; i++) {
+      sum = 0;
+      for (i = 0; i < arguments.length; i++) {
         z = Number(arguments[i]);
         sum += z * z;
       }
@@ -1426,7 +1546,7 @@ $jscomp.polyfill('Number.parseFloat', function(orig) {
 $jscomp.polyfill('Number.parseInt', function(orig) {
   return orig || parseInt;
 }, 'es6', 'es3');
-$jscomp.assign = typeof Object.assign == 'function' ? Object.assign : function(target, var_args) {
+$jscomp.assign = $jscomp.TRUST_ES6_POLYFILLS && typeof Object.assign == 'function' ? Object.assign : function(target, var_args) {
   for (var i = 1; i < arguments.length; i++) {
     var source = arguments[i];
     if (!source) {
@@ -1458,6 +1578,36 @@ $jscomp.polyfill('Object.entries', function(orig) {
   };
   return entries;
 }, 'es8', 'es3');
+$jscomp.polyfill('Object.fromEntries', function(orig) {
+  if (orig) {
+    return orig;
+  }
+  function fromEntries(iter) {
+    var obj = {};
+    if (!(Symbol.iterator in iter)) {
+      throw new TypeError('' + iter + ' is not iterable');
+    }
+    var iteratorFn = iter[Symbol.iterator];
+    var iterator = iteratorFn.call(iter);
+    for (var result = iterator.next(); !result.done; result = iterator.next()) {
+      var pair = result.value;
+      if (Object(pair) !== pair) {
+        throw new TypeError('iterable for fromEntries should yield objects');
+      }
+      var key = pair[0];
+      var val = pair[1];
+      obj[key] = val;
+    }
+    return obj;
+  }
+  return fromEntries;
+}, 'es_2019', 'es3');
+$jscomp.polyfill('Reflect', function(orig) {
+  if (orig) {
+    return orig;
+  }
+  return {};
+}, 'es6', 'es3');
 $jscomp.polyfill('Object.getOwnPropertySymbols', function(orig) {
   if (orig) {
     return orig;
@@ -1517,6 +1667,401 @@ $jscomp.polyfill('Object.values', function(orig) {
   };
   return values;
 }, 'es8', 'es3');
+$jscomp.polyfill('Promise', function(NativePromise) {
+  function platformSupportsPromiseRejectionEvents() {
+    return typeof $jscomp.global['PromiseRejectionEvent'] !== 'undefined';
+  }
+  function globalPromiseIsNative() {
+    return $jscomp.global['Promise'] && $jscomp.global['Promise'].toString().indexOf('[native code]') !== -1;
+  }
+  function shouldForcePolyfillPromise() {
+    return ($jscomp.FORCE_POLYFILL_PROMISE || $jscomp.FORCE_POLYFILL_PROMISE_WHEN_NO_UNHANDLED_REJECTION && !platformSupportsPromiseRejectionEvents()) && globalPromiseIsNative();
+  }
+  if (NativePromise && !shouldForcePolyfillPromise()) {
+    return NativePromise;
+  }
+  function AsyncExecutor() {
+    this.batch_ = null;
+  }
+  AsyncExecutor.prototype.asyncExecute = function(f) {
+    if (this.batch_ == null) {
+      this.batch_ = [];
+      var self = this;
+      this.asyncExecuteFunction(function() {
+        self.executeBatch_();
+      });
+    }
+    this.batch_.push(f);
+  };
+  var nativeSetTimeout = $jscomp.global['setTimeout'];
+  AsyncExecutor.prototype.asyncExecuteFunction = function(f) {
+    nativeSetTimeout(f, 0);
+  };
+  AsyncExecutor.prototype.executeBatch_ = function() {
+    while (this.batch_ && this.batch_.length) {
+      var executingBatch = this.batch_;
+      this.batch_ = [];
+      for (var i = 0; i < executingBatch.length; ++i) {
+        var f = executingBatch[i];
+        executingBatch[i] = null;
+        try {
+          f();
+        } catch (error) {
+          this.asyncThrow_(error);
+        }
+      }
+    }
+    this.batch_ = null;
+  };
+  AsyncExecutor.prototype.asyncThrow_ = function(exception) {
+    this.asyncExecuteFunction(function() {
+      throw exception;
+    });
+  };
+  var PromiseState = {PENDING:0, FULFILLED:1, REJECTED:2};
+  var PolyfillPromise = function(executor) {
+    this.state_ = PromiseState.PENDING;
+    this.result_ = undefined;
+    this.onSettledCallbacks_ = [];
+    this.isRejectionHandled_ = false;
+    var resolveAndReject = this.createResolveAndReject_();
+    try {
+      executor(resolveAndReject.resolve, resolveAndReject.reject);
+    } catch (e) {
+      resolveAndReject.reject(e);
+    }
+  };
+  PolyfillPromise.prototype.createResolveAndReject_ = function() {
+    var thisPromise = this;
+    var alreadyCalled = false;
+    function firstCallWins(method) {
+      return function(x) {
+        if (!alreadyCalled) {
+          alreadyCalled = true;
+          method.call(thisPromise, x);
+        }
+      };
+    }
+    return {resolve:firstCallWins(this.resolveTo_), reject:firstCallWins(this.reject_)};
+  };
+  PolyfillPromise.prototype.resolveTo_ = function(value) {
+    if (value === this) {
+      this.reject_(new TypeError('A Promise cannot resolve to itself'));
+    } else if (value instanceof PolyfillPromise) {
+      this.settleSameAsPromise_(value);
+    } else if (isObject(value)) {
+      this.resolveToNonPromiseObj_(value);
+    } else {
+      this.fulfill_(value);
+    }
+  };
+  PolyfillPromise.prototype.resolveToNonPromiseObj_ = function(obj) {
+    var thenMethod = undefined;
+    try {
+      thenMethod = obj.then;
+    } catch (error) {
+      this.reject_(error);
+      return;
+    }
+    if (typeof thenMethod == 'function') {
+      this.settleSameAsThenable_(thenMethod, obj);
+    } else {
+      this.fulfill_(obj);
+    }
+  };
+  function isObject(value) {
+    switch(typeof value) {
+      case 'object':
+        return value != null;
+      case 'function':
+        return true;
+      default:
+        return false;
+    }
+  }
+  PolyfillPromise.prototype.reject_ = function(reason) {
+    this.settle_(PromiseState.REJECTED, reason);
+  };
+  PolyfillPromise.prototype.fulfill_ = function(value) {
+    this.settle_(PromiseState.FULFILLED, value);
+  };
+  PolyfillPromise.prototype.settle_ = function(settledState, valueOrReason) {
+    if (this.state_ != PromiseState.PENDING) {
+      throw new Error('Cannot settle(' + settledState + ', ' + valueOrReason + '): Promise already settled in state' + this.state_);
+    }
+    this.state_ = settledState;
+    this.result_ = valueOrReason;
+    if (this.state_ === PromiseState.REJECTED) {
+      this.scheduleUnhandledRejectionCheck_();
+    }
+    this.executeOnSettledCallbacks_();
+  };
+  PolyfillPromise.prototype.scheduleUnhandledRejectionCheck_ = function() {
+    var self = this;
+    nativeSetTimeout(function() {
+      if (self.notifyUnhandledRejection_()) {
+        var nativeConsole = $jscomp.global['console'];
+        if (typeof nativeConsole !== 'undefined') {
+          nativeConsole.error(self.result_);
+        }
+      }
+    }, 1);
+  };
+  PolyfillPromise.prototype.notifyUnhandledRejection_ = function() {
+    if (this.isRejectionHandled_) {
+      return false;
+    }
+    var NativeCustomEvent = $jscomp.global['CustomEvent'];
+    var NativeEvent = $jscomp.global['Event'];
+    var nativeDispatchEvent = $jscomp.global['dispatchEvent'];
+    if (typeof nativeDispatchEvent === 'undefined') {
+      return true;
+    }
+    var event;
+    if (typeof NativeCustomEvent === 'function') {
+      event = new NativeCustomEvent('unhandledrejection', {cancelable:true});
+    } else if (typeof NativeEvent === 'function') {
+      event = new NativeEvent('unhandledrejection', {cancelable:true});
+    } else {
+      event = $jscomp.global['document'].createEvent('CustomEvent');
+      event.initCustomEvent('unhandledrejection', false, true, event);
+    }
+    event.promise = this;
+    event.reason = this.result_;
+    return nativeDispatchEvent(event);
+  };
+  PolyfillPromise.prototype.executeOnSettledCallbacks_ = function() {
+    if (this.onSettledCallbacks_ != null) {
+      for (var i = 0; i < this.onSettledCallbacks_.length; ++i) {
+        asyncExecutor.asyncExecute(this.onSettledCallbacks_[i]);
+      }
+      this.onSettledCallbacks_ = null;
+    }
+  };
+  var asyncExecutor = new AsyncExecutor();
+  PolyfillPromise.prototype.settleSameAsPromise_ = function(promise) {
+    var methods = this.createResolveAndReject_();
+    promise.callWhenSettled_(methods.resolve, methods.reject);
+  };
+  PolyfillPromise.prototype.settleSameAsThenable_ = function(thenMethod, thenable) {
+    var methods = this.createResolveAndReject_();
+    try {
+      thenMethod.call(thenable, methods.resolve, methods.reject);
+    } catch (error) {
+      methods.reject(error);
+    }
+  };
+  PolyfillPromise.prototype.then = function(onFulfilled, onRejected) {
+    var resolveChild;
+    var rejectChild;
+    var childPromise = new PolyfillPromise(function(resolve, reject) {
+      resolveChild = resolve;
+      rejectChild = reject;
+    });
+    function createCallback(paramF, defaultF) {
+      if (typeof paramF == 'function') {
+        return function(x) {
+          try {
+            resolveChild(paramF(x));
+          } catch (error) {
+            rejectChild(error);
+          }
+        };
+      } else {
+        return defaultF;
+      }
+    }
+    this.callWhenSettled_(createCallback(onFulfilled, resolveChild), createCallback(onRejected, rejectChild));
+    return childPromise;
+  };
+  PolyfillPromise.prototype["catch"] = function(onRejected) {
+    return this.then(undefined, onRejected);
+  };
+  PolyfillPromise.prototype.callWhenSettled_ = function(onFulfilled, onRejected) {
+    var thisPromise = this;
+    function callback() {
+      switch(thisPromise.state_) {
+        case PromiseState.FULFILLED:
+          onFulfilled(thisPromise.result_);
+          break;
+        case PromiseState.REJECTED:
+          onRejected(thisPromise.result_);
+          break;
+        default:
+          throw new Error('Unexpected state: ' + thisPromise.state_);
+      }
+    }
+    if (this.onSettledCallbacks_ == null) {
+      asyncExecutor.asyncExecute(callback);
+    } else {
+      this.onSettledCallbacks_.push(callback);
+    }
+    this.isRejectionHandled_ = true;
+  };
+  function resolvingPromise(opt_value) {
+    if (opt_value instanceof PolyfillPromise) {
+      return opt_value;
+    } else {
+      return new PolyfillPromise(function(resolve, reject) {
+        resolve(opt_value);
+      });
+    }
+  }
+  PolyfillPromise['resolve'] = resolvingPromise;
+  PolyfillPromise['reject'] = function(opt_reason) {
+    return new PolyfillPromise(function(resolve, reject) {
+      reject(opt_reason);
+    });
+  };
+  PolyfillPromise['race'] = function(thenablesOrValues) {
+    return new PolyfillPromise(function(resolve, reject) {
+      var iterator = $jscomp.makeIterator(thenablesOrValues);
+      for (var iterRec = iterator.next(); !iterRec.done; iterRec = iterator.next()) {
+        resolvingPromise(iterRec.value).callWhenSettled_(resolve, reject);
+      }
+    });
+  };
+  PolyfillPromise['all'] = function(thenablesOrValues) {
+    var iterator = $jscomp.makeIterator(thenablesOrValues);
+    var iterRec = iterator.next();
+    if (iterRec.done) {
+      return resolvingPromise([]);
+    } else {
+      return new PolyfillPromise(function(resolveAll, rejectAll) {
+        var resultsArray = [];
+        var unresolvedCount = 0;
+        function onFulfilled(i) {
+          return function(ithResult) {
+            resultsArray[i] = ithResult;
+            unresolvedCount--;
+            if (unresolvedCount == 0) {
+              resolveAll(resultsArray);
+            }
+          };
+        }
+        do {
+          resultsArray.push(undefined);
+          unresolvedCount++;
+          resolvingPromise(iterRec.value).callWhenSettled_(onFulfilled(resultsArray.length - 1), rejectAll);
+          iterRec = iterator.next();
+        } while (!iterRec.done);
+      });
+    }
+  };
+  return PolyfillPromise;
+}, 'es6', 'es3');
+$jscomp.polyfill('Promise.allSettled', function(orig) {
+  if (orig) {
+    return orig;
+  }
+  function fulfilledResult(value) {
+    return {status:'fulfilled', value:value};
+  }
+  function rejectedResult(reason) {
+    return {status:'rejected', reason:reason};
+  }
+  var polyfill = function(thenablesOrValues) {
+    var PromiseConstructor = this;
+    function convertToAllSettledResult(maybeThenable) {
+      return PromiseConstructor.resolve(maybeThenable).then(fulfilledResult, rejectedResult);
+    }
+    var wrappedResults = Array.from(thenablesOrValues, convertToAllSettledResult);
+    return PromiseConstructor.all(wrappedResults);
+  };
+  return polyfill;
+}, 'es_2020', 'es3');
+$jscomp.polyfill('Promise.prototype.finally', function(orig) {
+  if (orig) {
+    return orig;
+  }
+  var polyfill = function(onFinally) {
+    return this.then(function(value) {
+      var promise = Promise.resolve(onFinally());
+      return promise.then(function() {
+        return value;
+      });
+    }, function(reason) {
+      var promise = Promise.resolve(onFinally());
+      return promise.then(function() {
+        throw reason;
+      });
+    });
+  };
+  return polyfill;
+}, 'es9', 'es3');
+$jscomp.objectCreate = $jscomp.ASSUME_ES5 || typeof Object.create == 'function' ? Object.create : function(prototype) {
+  var ctor = function() {
+  };
+  ctor.prototype = prototype;
+  return new ctor();
+};
+$jscomp.inherits = function(childCtor, parentCtor) {
+  childCtor.prototype = $jscomp.objectCreate(parentCtor.prototype);
+  childCtor.prototype.constructor = childCtor;
+  if ($jscomp.setPrototypeOf) {
+    var setPrototypeOf = $jscomp.setPrototypeOf;
+    setPrototypeOf(childCtor, parentCtor);
+  } else {
+    for (var p in parentCtor) {
+      if (p == 'prototype') {
+        continue;
+      }
+      if (Object.defineProperties) {
+        var descriptor = Object.getOwnPropertyDescriptor(parentCtor, p);
+        if (descriptor) {
+          Object.defineProperty(childCtor, p, descriptor);
+        }
+      } else {
+        childCtor[p] = parentCtor[p];
+      }
+    }
+  }
+  childCtor.superClass_ = parentCtor.prototype;
+};
+$jscomp.polyfill('AggregateError', function(orig) {
+  if (orig) {
+    return orig;
+  }
+  var polyfill = function(errors, message) {
+    var $jscomp$tmp$error = Error(message);
+    if ('stack' in $jscomp$tmp$error) {
+      this.stack = $jscomp$tmp$error.stack;
+    }
+    this.errors = errors;
+    this.message = $jscomp$tmp$error.message;
+  };
+  $jscomp.inherits(polyfill, Error);
+  polyfill.prototype.name = 'AggregateError';
+  return polyfill;
+}, 'es_2021', 'es3');
+$jscomp.polyfill('Promise.any', function(orig) {
+  if (orig) {
+    return orig;
+  }
+  var aggregate_error_msg = 'All promises were rejected';
+  function resolvingArray(iterable) {
+    if (iterable instanceof Array) {
+      return iterable;
+    } else {
+      return Array.from(iterable);
+    }
+  }
+  var polyfill = function(thenablesOrValues) {
+    thenablesOrValues = resolvingArray(thenablesOrValues);
+    return Promise.all(thenablesOrValues.map(function(p) {
+      return Promise.resolve(p).then(function(val) {
+        throw val;
+      }, function(err) {
+        return err;
+      });
+    })).then(function(errors) {
+      throw new AggregateError(errors, aggregate_error_msg);
+    }, function(val) {
+      return val;
+    });
+  };
+  return polyfill;
+}, 'es_2021', 'es3');
 $jscomp.polyfill('Reflect.apply', function(orig) {
   if (orig) {
     return orig;
@@ -1527,23 +2072,17 @@ $jscomp.polyfill('Reflect.apply', function(orig) {
   };
   return polyfill;
 }, 'es6', 'es3');
-$jscomp.objectCreate = $jscomp.ASSUME_ES5 || typeof Object.create == 'function' ? Object.create : function(prototype) {
-  var ctor = function() {
-  };
-  ctor.prototype = prototype;
-  return new ctor;
-};
-$jscomp.construct = function() {
+$jscomp.getConstructImplementation = function() {
   function reflectConstructWorks() {
     function Base() {
     }
     function Derived() {
     }
-    new Base;
+    new Base();
     Reflect.construct(Base, [], Derived);
-    return new Base instanceof Base;
+    return new Base() instanceof Base;
   }
-  if (typeof Reflect != 'undefined' && Reflect.construct) {
+  if ($jscomp.TRUST_ES6_POLYFILLS && typeof Reflect != 'undefined' && Reflect.construct) {
     if (reflectConstructWorks()) {
       return Reflect.construct;
     }
@@ -1568,7 +2107,8 @@ $jscomp.construct = function() {
     return out || obj;
   }
   return construct;
-}();
+};
+$jscomp.construct = {valueOf:$jscomp.getConstructImplementation}.valueOf();
 $jscomp.polyfill('Reflect.construct', function(orig) {
   return $jscomp.construct;
 }, 'es6', 'es3');
@@ -1690,11 +2230,9 @@ $jscomp.polyfill('Reflect.set', function(orig) {
     if (property.set) {
       property.set.call(arguments.length > 3 ? opt_receiver : target, value);
       return true;
-    } else {
-      if (property.writable && !Object.isFrozen(target)) {
-        target[propertyKey] = value;
-        return true;
-      }
+    } else if (property.writable && !Object.isFrozen(target)) {
+      target[propertyKey] = value;
+      return true;
     }
     return false;
   };
@@ -1703,21 +2241,19 @@ $jscomp.polyfill('Reflect.set', function(orig) {
 $jscomp.polyfill('Reflect.setPrototypeOf', function(orig) {
   if (orig) {
     return orig;
+  } else if ($jscomp.setPrototypeOf) {
+    var setPrototypeOf = $jscomp.setPrototypeOf;
+    var polyfill = function(target, proto) {
+      try {
+        setPrototypeOf(target, proto);
+        return true;
+      } catch (e) {
+        return false;
+      }
+    };
+    return polyfill;
   } else {
-    if ($jscomp.setPrototypeOf) {
-      var setPrototypeOf = $jscomp.setPrototypeOf;
-      var polyfill = function(target, proto) {
-        try {
-          setPrototypeOf(target, proto);
-          return true;
-        } catch (e) {
-          return false;
-        }
-      };
-      return polyfill;
-    } else {
-      return null;
-    }
+    return null;
   }
 }, 'es6', 'es5');
 $jscomp.polyfill('Set', function(NativeSet) {
@@ -1755,10 +2291,8 @@ $jscomp.polyfill('Set', function(NativeSet) {
       return NativeSet;
     }
   }
-  $jscomp.initSymbol();
-  $jscomp.initSymbolIterator();
   var PolyfillSet = function(opt_iterable) {
-    this.map_ = new Map;
+    this.map_ = new Map();
     if (opt_iterable) {
       var iter = $jscomp.makeIterator(opt_iterable);
       var entry;
@@ -1775,8 +2309,8 @@ $jscomp.polyfill('Set', function(NativeSet) {
     this.size = this.map_.size;
     return this;
   };
-  PolyfillSet.prototype['delete'] = function(value) {
-    var result = this.map_['delete'](value);
+  PolyfillSet.prototype["delete"] = function(value) {
+    var result = this.map_["delete"](value);
     this.size = this.map_.size;
     return result;
   };
@@ -1890,6 +2424,38 @@ $jscomp.polyfill('String.prototype.includes', function(orig) {
   };
   return polyfill;
 }, 'es6', 'es3');
+$jscomp.polyfill('String.prototype.matchAll', function(orig) {
+  if (orig) {
+    return orig;
+  }
+  var polyfill = function(regexp) {
+    if (regexp instanceof RegExp && !regexp.global) {
+      throw new TypeError('RegExp passed into String.prototype.matchAll() must have global tag.');
+    }
+    var regexCopy = new RegExp(regexp, regexp instanceof RegExp ? undefined : 'g');
+    var matchString = this;
+    var finished = false;
+    var matchAllIterator = {next:function() {
+      if (finished) {
+        return {value:undefined, done:true};
+      }
+      var match = regexCopy.exec(matchString);
+      if (!match) {
+        finished = true;
+        return {value:undefined, done:true};
+      }
+      if (match[0] === '') {
+        regexCopy.lastIndex += 1;
+      }
+      return {value:match, done:false};
+    }};
+    matchAllIterator[Symbol.iterator] = function() {
+      return matchAllIterator;
+    };
+    return matchAllIterator;
+  };
+  return polyfill;
+}, 'es_2020', 'es3');
 $jscomp.polyfill('String.prototype.repeat', function(orig) {
   if (orig) {
     return orig;
@@ -1943,6 +2509,45 @@ $jscomp.polyfill('String.prototype.padStart', function(orig) {
   };
   return padStart;
 }, 'es8', 'es3');
+$jscomp.polyfill('String.raw', function(orig) {
+  if (orig) {
+    return orig;
+  }
+  var stringRaw = function(strings, var_args) {
+    if (strings == null) {
+      throw new TypeError('Cannot convert undefined or null to object');
+    }
+    var raw = strings.raw;
+    var rawlen = raw.length;
+    var result = '';
+    for (var i = 0; i < rawlen; ++i) {
+      result += raw[i];
+      if (i + 1 < rawlen && i + 1 < arguments.length) {
+        result += String(arguments[i + 1]);
+      }
+    }
+    return result;
+  };
+  return stringRaw;
+}, 'es6', 'es3');
+$jscomp.polyfill('String.prototype.replaceAll', function(orig) {
+  if (orig) {
+    return orig;
+  }
+  function regExpEscape(s) {
+    return String(s).replace(/([-()\[\]{}+?*.$\^|,:#<!\\])/g, '\\$1').replace(/\x08/g, '\\x08');
+  }
+  var polyfill = function(searchValue, replacement) {
+    if (searchValue instanceof RegExp && !searchValue.global) {
+      throw new TypeError('String.prototype.replaceAll called with a non-global RegExp argument.');
+    }
+    if (searchValue instanceof RegExp) {
+      return this.replace(searchValue, replacement);
+    }
+    return this.replace(new RegExp(regExpEscape(searchValue), 'g'), replacement);
+  };
+  return polyfill;
+}, 'es_2021', 'es3');
 $jscomp.polyfill('String.prototype.startsWith', function(orig) {
   if (orig) {
     return orig;
@@ -1963,6 +2568,62 @@ $jscomp.polyfill('String.prototype.startsWith', function(orig) {
   };
   return polyfill;
 }, 'es6', 'es3');
+$jscomp.polyfill('String.prototype.trimRight', function(orig) {
+  function polyfill() {
+    return this.replace(/[\s\xa0]+$/, '');
+  }
+  return orig || polyfill;
+}, 'es_2019', 'es3');
+$jscomp.polyfill('String.prototype.trimEnd', function(orig) {
+  return orig || String.prototype.trimRight;
+}, 'es_2019', 'es3');
+$jscomp.polyfill('String.prototype.trimLeft', function(orig) {
+  function polyfill() {
+    return this.replace(/^[\s\xa0]+/, '');
+  }
+  return orig || polyfill;
+}, 'es_2019', 'es3');
+$jscomp.polyfill('String.prototype.trimStart', function(orig) {
+  return orig || String.prototype.trimLeft;
+}, 'es_2019', 'es3');
+$jscomp.typedArrayCopyWithin = function(orig) {
+  if (orig) {
+    return orig;
+  }
+  return Array.prototype.copyWithin;
+};
+$jscomp.polyfill('Int8Array.prototype.copyWithin', $jscomp.typedArrayCopyWithin, 'es6', 'es5');
+$jscomp.polyfill('Uint8Array.prototype.copyWithin', $jscomp.typedArrayCopyWithin, 'es6', 'es5');
+$jscomp.polyfill('Uint8ClampedArray.prototype.copyWithin', $jscomp.typedArrayCopyWithin, 'es6', 'es5');
+$jscomp.polyfill('Int16Array.prototype.copyWithin', $jscomp.typedArrayCopyWithin, 'es6', 'es5');
+$jscomp.polyfill('Uint16Array.prototype.copyWithin', $jscomp.typedArrayCopyWithin, 'es6', 'es5');
+$jscomp.polyfill('Int32Array.prototype.copyWithin', $jscomp.typedArrayCopyWithin, 'es6', 'es5');
+$jscomp.polyfill('Uint32Array.prototype.copyWithin', $jscomp.typedArrayCopyWithin, 'es6', 'es5');
+$jscomp.polyfill('Float32Array.prototype.copyWithin', $jscomp.typedArrayCopyWithin, 'es6', 'es5');
+$jscomp.polyfill('Float64Array.prototype.copyWithin', $jscomp.typedArrayCopyWithin, 'es6', 'es5');
+$jscomp.typedArrayFill = function(orig) {
+  if (orig) {
+    return orig;
+  }
+  return Array.prototype.fill;
+};
+$jscomp.polyfill('Int8Array.prototype.fill', $jscomp.typedArrayFill, 'es6', 'es5');
+$jscomp.polyfill('Uint8Array.prototype.fill', $jscomp.typedArrayFill, 'es6', 'es5');
+$jscomp.polyfill('Uint8ClampedArray.prototype.fill', $jscomp.typedArrayFill, 'es6', 'es5');
+$jscomp.polyfill('Int16Array.prototype.fill', $jscomp.typedArrayFill, 'es6', 'es5');
+$jscomp.polyfill('Uint16Array.prototype.fill', $jscomp.typedArrayFill, 'es6', 'es5');
+$jscomp.polyfill('Int32Array.prototype.fill', $jscomp.typedArrayFill, 'es6', 'es5');
+$jscomp.polyfill('Uint32Array.prototype.fill', $jscomp.typedArrayFill, 'es6', 'es5');
+$jscomp.polyfill('Float32Array.prototype.fill', $jscomp.typedArrayFill, 'es6', 'es5');
+$jscomp.polyfill('Float64Array.prototype.fill', $jscomp.typedArrayFill, 'es6', 'es5');
+$jscomp.createTemplateTagFirstArg = function(arrayStrings) {
+  arrayStrings.raw = arrayStrings;
+  return arrayStrings;
+};
+$jscomp.createTemplateTagFirstArgWithRaw = function(arrayStrings, rawArrayStrings) {
+  arrayStrings.raw = rawArrayStrings;
+  return arrayStrings;
+};
 $jscomp.arrayFromIterator = function(iterator) {
   var i;
   var arr = [];
@@ -1978,28 +2639,13 @@ $jscomp.arrayFromIterable = function(iterable) {
     return $jscomp.arrayFromIterator($jscomp.makeIterator(iterable));
   }
 };
-$jscomp.inherits = function(childCtor, parentCtor) {
-  childCtor.prototype = $jscomp.objectCreate(parentCtor.prototype);
-  childCtor.prototype.constructor = childCtor;
-  if ($jscomp.setPrototypeOf) {
-    var setPrototypeOf = $jscomp.setPrototypeOf;
-    setPrototypeOf(childCtor, parentCtor);
-  } else {
-    for (var p in parentCtor) {
-      if (p == 'prototype') {
-        continue;
-      }
-      if (Object.defineProperties) {
-        var descriptor = Object.getOwnPropertyDescriptor(parentCtor, p);
-        if (descriptor) {
-          Object.defineProperty(childCtor, p, descriptor);
-        }
-      } else {
-        childCtor[p] = parentCtor[p];
-      }
-    }
+$jscomp.getRestArguments = function() {
+  var startIndex = Number(this);
+  var restArgs = [];
+  for (var i = startIndex; i < arguments.length; i++) {
+    restArgs[i - startIndex] = arguments[i];
   }
-  childCtor.superClass_ = parentCtor.prototype;
+  return restArgs;
 };
 $jscomp.polyfill('WeakSet', function(NativeWeakSet) {
   function isConformant() {
@@ -2013,7 +2659,7 @@ $jscomp.polyfill('WeakSet', function(NativeWeakSet) {
       if (!set.has(x) || set.has(y)) {
         return false;
       }
-      set['delete'](x);
+      set["delete"](x);
       set.add(y);
       return !set.has(x) && set.has(y);
     } catch (err) {
@@ -2030,10 +2676,8 @@ $jscomp.polyfill('WeakSet', function(NativeWeakSet) {
     }
   }
   var PolyfillWeakSet = function(opt_iterable) {
-    this.map_ = new WeakMap;
+    this.map_ = new WeakMap();
     if (opt_iterable) {
-      $jscomp.initSymbol();
-      $jscomp.initSymbolIterator();
       var iter = $jscomp.makeIterator(opt_iterable);
       var entry;
       while (!(entry = iter.next()).done) {
@@ -2049,8 +2693,8 @@ $jscomp.polyfill('WeakSet', function(NativeWeakSet) {
   PolyfillWeakSet.prototype.has = function(elem) {
     return this.map_.has(elem);
   };
-  PolyfillWeakSet.prototype['delete'] = function(elem) {
-    return this.map_['delete'](elem);
+  PolyfillWeakSet.prototype["delete"] = function(elem) {
+    return this.map_["delete"](elem);
   };
   return PolyfillWeakSet;
 }, 'es6', 'es3');
@@ -2073,7 +2717,7 @@ var Ext = Ext || {};
   Ext.global = global;
   Ext.$nextIid = 0;
   Ext.now = Date.now || (Date.now = function() {
-    return +new Date;
+    return +new Date();
   });
   Ext.ticks = global.performance && global.performance.now ? function() {
     return performance.now();
@@ -2147,7 +2791,7 @@ var Ext = Ext || {};
     return o.getId();
   }, returnTrue:function() {
     return true;
-  }, emptyString:new String, emptyArray:Object.freeze ? Object.freeze([]) : [], baseCSSPrefix:Ext.buildSettings.baseCSSPrefix, $eventNameMap:{}, $vendorEventRe:/^(DOMMouse|Moz.+|MS.+|webkit.+)/, canonicalEventName:function(name) {
+  }, emptyString:new String(), emptyArray:Object.freeze ? Object.freeze([]) : [], baseCSSPrefix:Ext.buildSettings.baseCSSPrefix, $eventNameMap:{}, $vendorEventRe:/^(DOMMouse|Moz.+|MS.+|webkit.+)/, canonicalEventName:function(name) {
     return Ext.$eventNameMap[name] || (Ext.$eventNameMap[name] = Ext.$vendorEventRe.test(name) ? name : name.toLowerCase());
   }, applyIf:function(object, config) {
     var property;
@@ -2166,10 +2810,8 @@ var Ext = Ext || {};
       if (arg) {
         if (Ext.isArray(arg)) {
           this.destroy.apply(this, arg);
-        } else {
-          if (Ext.isFunction(arg.destroy) && !arg.destroyed) {
-            arg.destroy();
-          }
+        } else if (Ext.isFunction(arg.destroy) && !arg.destroyed) {
+          arg.destroy();
         }
       }
     }
@@ -2184,22 +2826,20 @@ var Ext = Ext || {};
   }, override:function(target, overrides) {
     if (target.$isClass) {
       target.override(overrides);
+    } else if (typeof target === 'function') {
+      Ext.apply(target.prototype, overrides);
     } else {
-      if (typeof target === 'function') {
-        Ext.apply(target.prototype, overrides);
-      } else {
-        var owner = target.self, privates;
-        if (owner && owner.$isClass) {
-          privates = overrides.privates;
-          if (privates) {
-            overrides = Ext.apply({}, overrides);
-            delete overrides.privates;
-            addInstanceOverrides(target, owner, privates);
-          }
-          addInstanceOverrides(target, owner, overrides);
-        } else {
-          Ext.apply(target, overrides);
+      var owner = target.self, privates;
+      if (owner && owner.$isClass) {
+        privates = overrides.privates;
+        if (privates) {
+          overrides = Ext.apply({}, overrides);
+          delete overrides.privates;
+          addInstanceOverrides(target, owner, privates);
         }
+        addInstanceOverrides(target, owner, overrides);
+      } else {
+        Ext.apply(target, overrides);
       }
     }
     return target;
@@ -2295,18 +2935,16 @@ var Ext = Ext || {};
       while (i--) {
         clone[i] = Ext.clone(item[i], cloneDom);
       }
-    } else {
-      if (type === '[object Object]' && item.constructor === Object) {
-        clone = {};
-        for (key in item) {
-          clone[key] = Ext.clone(item[key], cloneDom);
-        }
-        if (enumerables) {
-          for (j = enumerables.length; j--;) {
-            k = enumerables[j];
-            if (item.hasOwnProperty(k)) {
-              clone[k] = item[k];
-            }
+    } else if (type === '[object Object]' && item.constructor === Object) {
+      clone = {};
+      for (key in item) {
+        clone[key] = Ext.clone(item[key], cloneDom);
+      }
+      if (enumerables) {
+        for (j = enumerables.length; j--;) {
+          k = enumerables[j];
+          if (item.hasOwnProperty(k)) {
+            clone[k] = item[k];
           }
         }
       }
@@ -2385,10 +3023,8 @@ var Ext = Ext || {};
     return function(origin, delimiter) {
       if (!origin) {
         return [];
-      } else {
-        if (!delimiter) {
-          return [origin];
-        }
+      } else if (!delimiter) {
+        return [origin];
       }
       var replaceRe = cache[delimiter] || (cache[delimiter] = new RegExp('\\\\' + delimiter, 'g')), result = [], parts, part;
       parts = origin.split(delimiter);
@@ -2434,7 +3070,7 @@ var Ext = Ext || {};
     if (!Ext.Timer.track) {
       return null;
     }
-    var timer = Ext.apply({kind:kind, id:id, done:false, firing:false, creator:Ext.Timer.captureStack ? (new Error).stack : null, tick:Ext.Timer.tick, tock:Ext.Timer.tock}, info);
+    var timer = Ext.apply({kind:kind, id:id, done:false, firing:false, creator:Ext.Timer.captureStack ? (new Error()).stack : null, tick:Ext.Timer.tick, tock:Ext.Timer.tock}, info);
     var timers = Ext.Timer.all[kind] || (Ext.Timer.all[kind] = {});
     timers[timer.id] = timer;
     if (Ext.Timer.hook) {
@@ -2475,10 +3111,8 @@ var Ext = Ext || {};
     var expandos = target.$expandos;
     if (value !== undefined) {
       (expandos || (target.$expandos = {}))[id] = value;
-    } else {
-      if (expandos) {
-        delete expandos[id];
-      }
+    } else if (expandos) {
+      delete expandos[id];
     }
     return value;
   }});
@@ -2502,7 +3136,7 @@ Ext.platformTags.classic = !(Ext.platformTags.modern = Ext.isModern = true);
     return method || msg || '';
   }
   Ext.Error = function(config) {
-    var error = new Error;
+    var error = new Error();
     if (Ext.isString(config)) {
       config = {msg:config};
     }
@@ -2631,11 +3265,9 @@ Ext.Array = function() {
         for (i = 0; i < tailCount; ++i) {
           array[tailNewPos + i] = array[tailOldPos + i];
         }
-      } else {
-        if (tailNewPos > tailOldPos) {
-          for (i = tailCount; i--;) {
-            array[tailNewPos + i] = array[tailOldPos + i];
-          }
+      } else if (tailNewPos > tailOldPos) {
+        for (i = tailCount; i--;) {
+          array[tailNewPos + i] = array[tailOldPos + i];
         }
       }
       if (add && pos === lengthAfterRemove) {
@@ -2653,12 +3285,10 @@ Ext.Array = function() {
     if (insert && insert.length) {
       if (index === 0 && !removeCount) {
         array.unshift.apply(array, insert);
+      } else if (index < array.length) {
+        array.splice.apply(array, [index, removeCount].concat(insert));
       } else {
-        if (index < array.length) {
-          array.splice.apply(array, [index, removeCount].concat(insert));
-        } else {
-          array.push.apply(array, insert);
-        }
+        array.push.apply(array, insert);
       }
     } else {
       array.splice(index, removeCount);
@@ -2689,19 +3319,17 @@ Ext.Array = function() {
       compareFn = begin;
       begin = 0;
       end = length;
+    } else if (end instanceof Function) {
+      compareFn = end;
+      end = length;
     } else {
-      if (end instanceof Function) {
-        compareFn = end;
-        end = length;
-      } else {
-        if (begin === undefined) {
-          begin = 0;
-        }
-        if (end === undefined) {
-          end = length;
-        }
-        compareFn = compareFn || ExtArray.lexicalCompare;
+      if (begin === undefined) {
+        begin = 0;
       }
+      if (end === undefined) {
+        end = length;
+      }
+      compareFn = compareFn || ExtArray.lexicalCompare;
     }
     --end;
     while (begin <= end) {
@@ -2709,10 +3337,8 @@ Ext.Array = function() {
       comparison = compareFn(item, array[middle]);
       if (comparison >= 0) {
         begin = middle + 1;
-      } else {
-        if (comparison < 0) {
-          end = middle - 1;
-        }
+      } else if (comparison < 0) {
+        end = middle - 1;
       }
     }
     return begin;
@@ -3078,21 +3704,17 @@ Ext.Array = function() {
     i = strings.length;
     if (typeof strings === 'string') {
       map[strings] = 1;
+    } else if (!getKey) {
+      while (i--) {
+        map[strings[i]] = i + 1;
+      }
+    } else if (typeof getKey === 'string') {
+      while (i--) {
+        map[strings[i][getKey]] = i + 1;
+      }
     } else {
-      if (!getKey) {
-        while (i--) {
-          map[strings[i]] = i + 1;
-        }
-      } else {
-        if (typeof getKey === 'string') {
-          while (i--) {
-            map[strings[i][getKey]] = i + 1;
-          }
-        } else {
-          while (i--) {
-            map[getKey.call(scope, strings[i])] = i + 1;
-          }
-        }
+      while (i--) {
+        map[getKey.call(scope, strings[i])] = i + 1;
       }
     }
     return map;
@@ -3118,16 +3740,14 @@ Ext.Array = function() {
           } else {
             map[key] = [value];
           }
-        } else {
-          if (autoArray && key in map) {
-            if ((entry = map[key]) instanceof Array) {
-              entry.push(value);
-            } else {
-              map[key] = [entry, value];
-            }
+        } else if (autoArray && key in map) {
+          if ((entry = map[key]) instanceof Array) {
+            entry.push(value);
           } else {
-            map[key] = value;
+            map[key] = [entry, value];
           }
+        } else {
+          map[key] = value;
         }
       }
     }
@@ -3147,10 +3767,8 @@ Ext.Array = function() {
     var args = arguments, len = args.length, i, newItem;
     if (target === undefined) {
       target = [];
-    } else {
-      if (!Ext.isArray(target)) {
-        target = [target];
-      }
+    } else if (!Ext.isArray(target)) {
+      target = [target];
     }
     for (i = 1; i < len; i++) {
       newItem = args[i];
@@ -3303,12 +3921,10 @@ Ext.String = function() {
     }
     if (index === 0) {
       s = value + s;
+    } else if (index >= s.length) {
+      s += value;
     } else {
-      if (index >= s.length) {
-        s += value;
-      } else {
-        s = s.substr(0, index) + value + s.substr(index);
-      }
+      s = s.substr(0, index) + value + s.substr(index);
     }
     return s;
   }, startsWith:function(s, start, ignoreCase) {
@@ -3453,7 +4069,7 @@ Ext.Date = function() {
   }
   utilDate = {now:nativeDate.now, toString:function(date) {
     if (!date) {
-      date = new nativeDate;
+      date = new nativeDate();
     }
     return date.getFullYear() + '-' + pad(date.getMonth() + 1, 2, '0') + '-' + pad(date.getDate(), 2, '0') + 'T' + pad(date.getHours(), 2, '0') + ':' + pad(date.getMinutes(), 2, '0') + ':' + pad(date.getSeconds(), 2, '0');
   }, getElapsed:function(dateA, dateB) {
@@ -3547,16 +4163,14 @@ Ext.Date = function() {
       ch = format.charAt(i);
       if (!special && ch === '\\') {
         special = true;
+      } else if (special) {
+        special = false;
+        code.push("'" + Ext.String.escape(ch) + "'");
       } else {
-        if (special) {
-          special = false;
-          code.push("'" + Ext.String.escape(ch) + "'");
+        if (ch === '\n') {
+          code.push("'\\n'");
         } else {
-          if (ch === '\n') {
-            code.push("'\\n'");
-          } else {
-            code.push(utilDate.getFormatCode(ch));
-          }
+          code.push(utilDate.getFormatCode(ch));
         }
       }
     }
@@ -3567,20 +4181,18 @@ Ext.Date = function() {
       ch = format.charAt(i);
       if (!special && ch === '\\') {
         special = true;
+      } else if (special) {
+        special = false;
+        regex.push(Ext.String.escape(ch));
       } else {
-        if (special) {
-          special = false;
-          regex.push(Ext.String.escape(ch));
-        } else {
-          obj = utilDate.formatCodeToRegex(ch, currentGroup);
-          currentGroup += obj.g;
-          regex.push(obj.s);
-          if (obj.g && obj.c) {
-            if (obj.calcAtEnd) {
-              atEnd.push(obj.c);
-            } else {
-              calc.push(obj.c);
-            }
+        obj = utilDate.formatCodeToRegex(ch, currentGroup);
+        currentGroup += obj.g;
+        regex.push(obj.s);
+        if (obj.g && obj.c) {
+          if (obj.calcAtEnd) {
+            atEnd.push(obj.c);
+          } else {
+            calc.push(obj.c);
           }
         }
       }
@@ -3928,16 +4540,14 @@ Ext.Date = function() {
         day = parseInt(parts[1]);
         month = parseInt(parts[3]) - 1;
         year = parseInt(parts[5]);
+      } else if (!yearInfo[firstFormatToken] && (monthInfo[firstFormatToken] || parts[3] > 12 && parts[1] < 13)) {
+        month = parseInt(parts[1]) - 1;
+        day = parseInt(parts[3]);
+        year = parseInt(parts[5]);
       } else {
-        if (!yearInfo[firstFormatToken] && (monthInfo[firstFormatToken] || parts[3] > 12 && parts[1] < 13)) {
-          month = parseInt(parts[1]) - 1;
-          day = parseInt(parts[3]);
-          year = parseInt(parts[5]);
-        } else {
-          year = parseInt(parts[1]);
-          month = parseInt(parts[3]) - 1;
-          day = parseInt(parts[5]);
-        }
+        year = parseInt(parts[1]);
+        month = parseInt(parts[3]) - 1;
+        day = parseInt(parts[5]);
       }
     } else {
       if (parts[2] && parts[4]) {
@@ -4035,11 +4645,9 @@ Ext.Function = function() {
       if (appendArgs === true) {
         callArgs = slice.call(arguments, 0);
         callArgs = callArgs.concat(args);
-      } else {
-        if (typeof appendArgs === 'number') {
-          callArgs = slice.call(arguments, 0);
-          Ext.Array.insert(callArgs, appendArgs, args);
-        }
+      } else if (typeof appendArgs === 'number') {
+        callArgs = slice.call(arguments, 0);
+        Ext.Array.insert(callArgs, appendArgs, args);
       }
       return method.apply(scope || global, callArgs);
     };
@@ -4210,10 +4818,8 @@ Ext.Function = function() {
       if (elapsed >= interval) {
         Ext.undefer(timerId);
         execute();
-      } else {
-        if (!timerId) {
-          timerId = Ext.defer(execute, interval - elapsed);
-        }
+      } else if (!timerId) {
+        timerId = Ext.defer(execute, interval - elapsed);
       }
     };
   }, createBarrier:function(count, fn, scope) {
@@ -4367,11 +4973,9 @@ Ext.Number = new function() {
     }
     if (typeof value === 'number') {
       value = Math.floor(value);
-    } else {
-      if (value !== null) {
-        value = String(value);
-        value = ExtNumber.intRe.test(value) ? +value : null;
-      }
+    } else if (value !== null) {
+      value = String(value);
+      value = ExtNumber.intRe.test(value) ? +value : null;
     }
     return value;
   }, binarySearch:function(array, value, begin, end) {
@@ -4428,19 +5032,17 @@ Ext.Number = new function() {
       end = indices[i];
       if (end == null) {
         end = defaultValue;
+      } else if (i && options.count) {
+        end += begin;
+        end = end > length ? length : end;
       } else {
-        if (i && options.count) {
-          end += begin;
-          end = end > length ? length : end;
-        } else {
-          if (wrap) {
-            end = end < 0 ? length + end : end;
-          }
-          if (i && options.inclusive) {
-            ++end;
-          }
-          end = end < 0 ? 0 : end > length ? length : end;
+        if (wrap) {
+          end = end < 0 ? length + end : end;
         }
+        if (i && options.inclusive) {
+          ++end;
+        }
+        end = end < 0 ? 0 : end > length ? length : end;
       }
       defaultValue = length;
     }
@@ -4467,10 +5069,8 @@ Ext.Number = new function() {
         value -= m;
         if (m * 2 >= increment) {
           value += increment;
-        } else {
-          if (m * 2 < -increment) {
-            value -= increment;
-          }
+        } else if (m * 2 < -increment) {
+          value -= increment;
         }
       }
     }
@@ -4540,14 +5140,14 @@ Ext.Number = new function() {
   Ext.num = function() {
     return ExtNumber.from.apply(this, arguments);
   };
-};
+}();
 (function() {
   var TemplateClass = function() {
   }, queryRe = /^\?/, keyRe = /(\[):?([^\]]*)\]/g, nameRe = /^([^\[]+)/, plusRe = /\+/g, ExtObject;
   ExtObject = Ext.Object = {chain:Object.create || function(object) {
     var result;
     TemplateClass.prototype = object;
-    result = new TemplateClass;
+    result = new TemplateClass();
     TemplateClass.prototype = null;
     return result;
   }, clear:function(object) {
@@ -4577,20 +5177,18 @@ Ext.Number = new function() {
           objects.push({name:name, value:value[i]});
         }
       }
-    } else {
-      if (Ext.isObject(value)) {
-        for (i in value) {
-          if (value.hasOwnProperty(i)) {
-            if (recursive) {
-              objects = objects.concat(self(name + '[' + i + ']', value[i], true));
-            } else {
-              objects.push({name:name, value:value[i]});
-            }
+    } else if (Ext.isObject(value)) {
+      for (i in value) {
+        if (value.hasOwnProperty(i)) {
+          if (recursive) {
+            objects = objects.concat(self(name + '[' + i + ']', value[i], true));
+          } else {
+            objects.push({name:name, value:value[i]});
           }
         }
-      } else {
-        objects.push({name:name, value:value});
       }
+    } else {
+      objects.push({name:name, value:value});
     }
     return objects;
   }, toQueryString:function(object, recursive) {
@@ -4605,10 +5203,8 @@ Ext.Number = new function() {
       value = paramObject.value;
       if (Ext.isEmpty(value)) {
         value = '';
-      } else {
-        if (Ext.isDate(value)) {
-          value = Ext.Date.toString(value);
-        }
+      } else if (Ext.isDate(value)) {
+        value = Ext.Date.toString(value);
       }
       params.push(encodeURIComponent(paramObject.name) + '\x3d' + encodeURIComponent(String(value)));
     }
@@ -4821,12 +5417,10 @@ Ext.Number = new function() {
       }
       if (object1 && object2) {
         return check(object1, object2) && check(object2, object1);
+      } else if (!object1 && !object2) {
+        return object1 === object2;
       } else {
-        if (!object1 && !object2) {
-          return object1 === object2;
-        } else {
-          return false;
-        }
+        return false;
       }
     };
   }(), fork:function(obj) {
@@ -4838,10 +5432,8 @@ Ext.Number = new function() {
         if (value) {
           if (value.constructor === Object) {
             ret[key] = ExtObject.fork(value);
-          } else {
-            if (value instanceof Array) {
-              ret[key] = Ext.Array.clone(value);
-            }
+          } else if (value instanceof Array) {
+            ret[key] = Ext.Array.clone(value);
           }
         }
       }
@@ -4865,7 +5457,7 @@ Ext.Number = new function() {
       var property, i, ln;
       for (i = 0, ln = objectProperties.length; i < ln; i++) {
         property = objectProperties[i];
-        this[property] = new propertyClassesMap[property];
+        this[property] = new propertyClassesMap[property]();
       }
     };
     for (key in object) {
@@ -4943,15 +5535,11 @@ Ext.apply(Ext, {_namedScopes:{'this':{isThis:1}, controller:{isController:1}, ow
         Ext.raise('Callback "up" syntax is incompatible with scopes');
       }
       scope = Ext.lookUpFn(caller, callback = callback.substr(3));
-    } else {
-      if (caller) {
-        if (namedScope && namedScope.isUp) {
-          scope = Ext.lookUpFn(caller, callback);
-        } else {
-          if (!scope || namedScope) {
-            scope = caller.resolveListenerScope(namedScope ? scope : defaultScope);
-          }
-        }
+    } else if (caller) {
+      if (namedScope && namedScope.isUp) {
+        scope = Ext.lookUpFn(caller, callback);
+      } else if (!scope || namedScope) {
+        scope = caller.resolveListenerScope(namedScope ? scope : defaultScope);
       }
     }
     if (!scope || !Ext.isObject(scope)) {
@@ -4961,14 +5549,10 @@ Ext.apply(Ext, {_namedScopes:{'this':{isThis:1}, controller:{isController:1}, ow
       Ext.raise('No method named "' + callback + '" on ' + (scope.$className || 'scope object'));
     }
     callback = scope[callback];
-  } else {
-    if (namedScope) {
-      scope = defaultScope || caller;
-    } else {
-      if (!scope) {
-        scope = caller;
-      }
-    }
+  } else if (namedScope) {
+    scope = defaultScope || caller;
+  } else if (!scope) {
+    scope = caller;
   }
   if (callback && Ext.isFunction(callback)) {
     scope = scope || Ext.global;
@@ -5070,7 +5654,7 @@ Ext.apply(Ext, {_namedScopes:{'this':{isThis:1}, controller:{isController:1}, ow
     var F = function() {
     }, superclassProto = superclass.prototype, subclassProto;
     F.prototype = superclassProto;
-    subclassProto = subclass.prototype = new F;
+    subclassProto = subclass.prototype = new F();
     subclassProto.constructor = subclass;
     subclass.superclass = superclassProto;
     if (superclassProto.constructor === objectConstructor) {
@@ -5162,10 +5746,8 @@ Ext.apply(Ext, {_namedScopes:{'this':{isThis:1}, controller:{isController:1}, ow
   if (aliasNamespace) {
     if (typeof config === 'string') {
       return manager.instantiateByAlias(aliasNamespace + '.' + config);
-    } else {
-      if (Ext.isObject(config) && 'type' in config) {
-        return manager.instantiateByAlias(aliasNamespace + '.' + config.type, config);
-      }
+    } else if (Ext.isObject(config) && 'type' in config) {
+      return manager.instantiateByAlias(aliasNamespace + '.' + config.type, config);
     }
   }
   if (config === true) {
@@ -5179,10 +5761,8 @@ Ext.apply(Ext, {_namedScopes:{'this':{isThis:1}, controller:{isController:1}, ow
   }
   if ('xtype' in config) {
     newInstance = manager.instantiateByAlias('widget.' + config.xtype, config);
-  } else {
-    if ('xclass' in config) {
-      newInstance = Ext.create(config.xclass, config);
-    }
+  } else if ('xclass' in config) {
+    newInstance = Ext.create(config.xclass, config);
   }
   if (newInstance) {
     if (instance) {
@@ -5206,23 +5786,19 @@ Ext.apply(Ext, {_namedScopes:{'this':{isThis:1}, controller:{isController:1}, ow
         if (item) {
           if (item === true) {
             item = {};
-          } else {
-            if (typeof item === 'function') {
-              if (!functionProperty) {
-                Ext.raise('Function not expected here');
-              }
-              value = item;
-              item = {};
-              item[functionProperty] = value;
-            } else {
-              if (typeof item === 'string') {
-                value = item;
-                item = {};
-                item[defaultProperty || 'xtype'] = value;
-              } else {
-                item = Ext.apply({}, item);
-              }
+          } else if (typeof item === 'function') {
+            if (!functionProperty) {
+              Ext.raise('Function not expected here');
             }
+            value = item;
+            item = {};
+            item[functionProperty] = value;
+          } else if (typeof item === 'string') {
+            value = item;
+            item = {};
+            item[defaultProperty || 'xtype'] = value;
+          } else {
+            item = Ext.apply({}, item);
           }
           item.itemId = itemId;
           items.push(item);
@@ -5247,11 +5823,9 @@ Ext.apply(Ext, {_namedScopes:{'this':{isThis:1}, controller:{isController:1}, ow
     if (Ext.isArray(object)) {
       prefix = '[';
       suffix = ']';
-    } else {
-      if (Ext.isObject(object)) {
-        prefix = '{';
-        suffix = '}';
-      }
+    } else if (Ext.isObject(object)) {
+      prefix = '{';
+      suffix = '}';
     }
     if (!maxLevel) {
       maxLevel = 3;
@@ -5270,24 +5844,16 @@ Ext.apply(Ext, {_namedScopes:{'this':{isThis:1}, controller:{isController:1}, ow
             continue;
           }
           member = type;
+        } else if (type === 'undefined') {
+          member = type;
+        } else if (value === null || primitiveRe.test(type) || Ext.isDate(value)) {
+          member = Ext.encode(value);
+        } else if (Ext.isArray(value)) {
+          member = dumpObject(value, level + 1, maxLevel, withFunctions);
+        } else if (Ext.isObject(value)) {
+          member = dumpObject(value, level + 1, maxLevel, withFunctions);
         } else {
-          if (type === 'undefined') {
-            member = type;
-          } else {
-            if (value === null || primitiveRe.test(type) || Ext.isDate(value)) {
-              member = Ext.encode(value);
-            } else {
-              if (Ext.isArray(value)) {
-                member = dumpObject(value, level + 1, maxLevel, withFunctions);
-              } else {
-                if (Ext.isObject(value)) {
-                  member = dumpObject(value, level + 1, maxLevel, withFunctions);
-                } else {
-                  member = type;
-                }
-              }
-            }
-          }
+          member = type;
         }
         members.push(spacer + name + ': ' + member);
       }
@@ -5310,10 +5876,8 @@ Ext.apply(Ext, {_namedScopes:{'this':{isThis:1}, controller:{isController:1}, ow
       fn = options.fn;
       if (options.indent) {
         ++log.indent;
-      } else {
-        if (options.outdent) {
-          log.indent = indent = Math.max(indent - 1, 0);
-        }
+      } else if (options.outdent) {
+        log.indent = indent = Math.max(indent - 1, 0);
       }
       if (dump && !(con && con.dir)) {
         message += dumpObject(dump);
@@ -5347,17 +5911,15 @@ Ext.apply(Ext, {_namedScopes:{'this':{isThis:1}, controller:{isController:1}, ow
           con.trace();
         }
       }
+    } else if (Ext.isOpera) {
+      opera.postError(message);
     } else {
-      if (Ext.isOpera) {
-        opera.postError(message);
-      } else {
-        out = log.out;
-        max = log.max;
-        if (out.length >= max) {
-          Ext.Array.erase(out, 0, out.length - 3 * Math.floor(max / 4));
-        }
-        out.push(message);
+      out = log.out;
+      max = log.max;
+      if (out.length >= max) {
+        Ext.Array.erase(out, 0, out.length - 3 * Math.floor(max / 4));
       }
+      out.push(message);
     }
     ++log.count;
     ++log.counters[level];
@@ -5566,14 +6128,12 @@ Ext.apply(Ext, {_namedScopes:{'this':{isThis:1}, controller:{isController:1}, ow
           } else {
             minVer = maxVer = range;
           }
+        } else if (index > 0) {
+          minVer = range.substring(0, index);
+          maxVer = range.substring(index + 1);
         } else {
-          if (index > 0) {
-            minVer = range.substring(0, index);
-            maxVer = range.substring(index + 1);
-          } else {
-            minVer = null;
-            maxVer = range.substring(index + 1);
-          }
+          minVer = null;
+          maxVer = range.substring(index + 1);
         }
         matches = true;
         if (minVer) {
@@ -5589,10 +6149,8 @@ Ext.apply(Ext, {_namedScopes:{'this':{isThis:1}, controller:{isController:1}, ow
         if (!matchAll) {
           return true;
         }
-      } else {
-        if (matchAll) {
-          return false;
-        }
+      } else if (matchAll) {
+        return false;
       }
     }
     return !!matchAll;
@@ -5639,14 +6197,10 @@ Ext.Config.prototype = {self:Ext.Config, isConfig:true, combine:function(value, 
   var cfg = this;
   if (cfg.merge) {
     value = cfg.merge(clone ? Ext.clone(value) : value, baseValue, instance);
-  } else {
-    if (value && value.constructor === Object && baseValue && baseValue.constructor === Object) {
-      value = Ext.merge({}, baseValue, value);
-    } else {
-      if (clone && value) {
-        value = Ext.clone(value);
-      }
-    }
+  } else if (value && value.constructor === Object && baseValue && baseValue.constructor === Object) {
+    value = Ext.merge({}, baseValue, value);
+  } else if (clone && value) {
+    value = Ext.clone(value);
   }
   return value;
 }, equals:function(value1, value2) {
@@ -5665,15 +6219,13 @@ Ext.Config.prototype = {self:Ext.Config, isConfig:true, combine:function(value, 
   var ret, key;
   if (!oldValue) {
     ret = newValue;
+  } else if (!newValue) {
+    ret = oldValue;
   } else {
-    if (!newValue) {
-      ret = oldValue;
-    } else {
-      ret = Ext.Object.chain(oldValue);
-      for (key in newValue) {
-        if (!mixinClass || !(key in ret)) {
-          ret[key] = newValue[key];
-        }
+    ret = Ext.Object.chain(oldValue);
+    for (key in newValue) {
+      if (!mixinClass || !(key in ret)) {
+        ret[key] = newValue[key];
       }
     }
   }
@@ -5687,20 +6239,16 @@ Ext.Config.prototype = {self:Ext.Config, isConfig:true, combine:function(value, 
         ret[val] = true;
       }
     }
-  } else {
-    if (newValue) {
-      if (newValue.constructor === Object) {
-        for (i in newValue) {
-          val = newValue[i];
-          if (!preserveExisting || !(i in ret)) {
-            ret[i] = val;
-          }
-        }
-      } else {
-        if (!preserveExisting || !(newValue in ret)) {
-          ret[newValue] = true;
+  } else if (newValue) {
+    if (newValue.constructor === Object) {
+      for (i in newValue) {
+        val = newValue[i];
+        if (!preserveExisting || !(i in ret)) {
+          ret[i] = val;
         }
       }
+    } else if (!preserveExisting || !(newValue in ret)) {
+      ret[newValue] = true;
     }
   }
   return ret;
@@ -5825,11 +6373,9 @@ Ext.Config.prototype = {self:Ext.Config, isConfig:true, combine:function(value, 
         currentValue = values[name];
         if (merge) {
           value = merge.call(cfg, value, currentValue, Cls, mixinClass);
-        } else {
-          if (isObject) {
-            if (currentValue && currentValue.constructor === Object) {
-              value = Ext.merge({}, currentValue, value);
-            }
+        } else if (isObject) {
+          if (currentValue && currentValue.constructor === Object) {
+            value = Ext.merge({}, currentValue, value);
           }
         }
       } else {
@@ -5882,10 +6428,8 @@ Ext.Config.prototype = {self:Ext.Config, isConfig:true, combine:function(value, 
       newName = configs[oldName];
       if (!newName) {
         message = 'This config has been removed.';
-      } else {
-        if (!(message = newName.message)) {
-          message = 'This config has been renamed to "' + newName + '"';
-        }
+      } else if (!(message = newName.message)) {
+        message = 'This config has been renamed to "' + newName + '"';
       }
       deprecations[oldName] = className + oldName + ': ' + message;
     }
@@ -5914,10 +6458,8 @@ Ext.Config.prototype = {self:Ext.Config, isConfig:true, combine:function(value, 
           } else {
             prototype[cfg.getInternalName(prototype)] = value;
           }
-        } else {
-          if (isCached) {
-            prototype[cfg.getInternalName(prototype)] = undefined;
-          }
+        } else if (isCached) {
+          prototype[cfg.getInternalName(prototype)] = undefined;
         }
       }
     }
@@ -5966,10 +6508,8 @@ Ext.Config.prototype = {self:Ext.Config, isConfig:true, combine:function(value, 
         for (i = 0; i < ln; ++i) {
           transforms[i] = transforms[i][0];
         }
-      } else {
-        if (ln) {
-          transforms[0] = transforms[0][0];
-        }
+      } else if (ln) {
+        transforms[0] = transforms[0][0];
       }
     }
     for (i = 0; i < transforms.length; ++i) {
@@ -6004,13 +6544,11 @@ Ext.Config.prototype = {self:Ext.Config, isConfig:true, combine:function(value, 
           valuesKey = values[name];
           if (cfg.merge) {
             value = cfg.merge(value, valuesKey, instance);
-          } else {
-            if (value && value.constructor === Object) {
-              if (valuesKey && valuesKey.constructor === Object) {
-                value = Ext.merge(values[name], value);
-              } else {
-                value = Ext.clone(value, false);
-              }
+          } else if (value && value.constructor === Object) {
+            if (valuesKey && valuesKey.constructor === Object) {
+              value = Ext.merge(values[name], value);
+            } else {
+              value = Ext.clone(value, false);
             }
           }
         }
@@ -6083,13 +6621,11 @@ Ext.Config.prototype = {self:Ext.Config, isConfig:true, combine:function(value, 
         baseValue = baseConfig[name];
         if (cfg.merge) {
           value = cfg.merge(value, baseValue, instance);
-        } else {
-          if (value && value.constructor === Object) {
-            if (baseValue && baseValue.constructor === Object) {
-              value = Ext.merge(baseValue, value);
-            } else {
-              value = Ext.clone(value, false);
-            }
+        } else if (value && value.constructor === Object) {
+          if (baseValue && baseValue.constructor === Object) {
+            value = Ext.merge(baseValue, value);
+          } else {
+            value = Ext.clone(value, false);
           }
         }
       }
@@ -6169,10 +6705,8 @@ Ext.Base = function(flexSetter) {
     var message = '"' + oldName + '" is deprecated.';
     if (msg) {
       message += ' ' + msg;
-    } else {
-      if (newName) {
-        message += ' Please use "' + newName + '" instead.';
-      }
+    } else if (newName) {
+      message += ' Please use "' + newName + '" instead.';
     }
     return function() {
       Ext.raise(message);
@@ -6248,10 +6782,8 @@ Ext.Base = function(flexSetter) {
       statics = deprecate.statics;
       enabled = compatVersion && compatVersion.lt(version);
       if (!enabled) {
-      } else {
-        if (!enabled) {
-          break;
-        }
+      } else if (!enabled) {
+        break;
       }
       while (deprecate) {
         names = deprecate.methods;
@@ -6262,35 +6794,31 @@ Ext.Base = function(flexSetter) {
             if (!member) {
               Ext.Assert.isNotDefinedProp(target, oldName);
               fn = makeDeprecatedMethod(displayName + oldName);
-            } else {
-              if (Ext.isString(member)) {
-                Ext.Assert.isNotDefinedProp(target, oldName);
-                Ext.Assert.isDefinedProp(target, member);
-                if (enabled) {
-                  fn = makeAliasFn(member);
-                } else {
-                  fn = makeDeprecatedMethod(displayName + oldName, member);
-                }
+            } else if (Ext.isString(member)) {
+              Ext.Assert.isNotDefinedProp(target, oldName);
+              Ext.Assert.isDefinedProp(target, member);
+              if (enabled) {
+                fn = makeAliasFn(member);
               } else {
-                message = '';
-                if (member.message || member.fn) {
-                  message = member.message;
-                  member = member.fn;
+                fn = makeDeprecatedMethod(displayName + oldName, member);
+              }
+            } else {
+              message = '';
+              if (member.message || member.fn) {
+                message = member.message;
+                member = member.fn;
+              }
+              existing = target.hasOwnProperty(oldName) && target[oldName];
+              if (enabled && member) {
+                member.$owner = me;
+                member.$name = oldName;
+                member.name = displayName + oldName;
+                if (existing) {
+                  member.$previous = existing;
                 }
-                existing = target.hasOwnProperty(oldName) && target[oldName];
-                if (enabled && member) {
-                  member.$owner = me;
-                  member.$name = oldName;
-                  member.name = displayName + oldName;
-                  if (existing) {
-                    member.$previous = existing;
-                  }
-                  fn = member;
-                } else {
-                  if (!existing) {
-                    fn = makeDeprecatedMethod(displayName + oldName, null, message);
-                  }
-                }
+                fn = member;
+              } else if (!existing) {
+                fn = makeDeprecatedMethod(displayName + oldName, null, message);
               }
             }
             if (fn) {
@@ -6308,12 +6836,10 @@ Ext.Base = function(flexSetter) {
             newName = names[oldName];
             if (Ext.isString(newName)) {
               addDeprecatedProperty(target, displayName + oldName, newName);
+            } else if (newName && newName.message) {
+              addDeprecatedProperty(target, displayName + oldName, null, newName.message);
             } else {
-              if (newName && newName.message) {
-                addDeprecatedProperty(target, displayName + oldName, null, newName.message);
-              } else {
-                addDeprecatedProperty(target, displayName + oldName);
-              }
+              addDeprecatedProperty(target, displayName + oldName);
             }
           }
         }
@@ -6425,16 +6951,12 @@ Ext.Base = function(flexSetter) {
             if (existing && existing.$privacy && existing.$privacy !== privacy) {
               Ext.privacyViolation(me, existing, member, isStatic);
             }
-          } else {
-            if (existing && existing.$privacy) {
-              Ext.privacyViolation(me, existing, member, isStatic);
-            }
+          } else if (existing && existing.$privacy) {
+            Ext.privacyViolation(me, existing, member, isStatic);
           }
-        } else {
-          if (defaultConfig && name in defaultConfig && !target.config.hasOwnProperty(name)) {
-            (configs || (configs = {}))[name] = member;
-            continue;
-          }
+        } else if (defaultConfig && name in defaultConfig && !target.config.hasOwnProperty(name)) {
+          (configs || (configs = {}))[name] = member;
+          continue;
         }
         target[name] = member;
       }
@@ -6573,10 +7095,8 @@ Ext.Base = function(flexSetter) {
       mixinValue = mixin[key];
       if (key === 'mixins') {
         Ext.applyIf(prototype.mixins, mixinValue);
-      } else {
-        if (!(key === 'mixinId' || key === 'config' || key === '$inheritableStatics') && prototype[key] === undefined) {
-          prototype[key] = mixinValue;
-        }
+      } else if (!(key === 'mixinId' || key === 'config' || key === '$inheritableStatics') && prototype[key] === undefined) {
+        prototype[key] = mixinValue;
       }
     }
     statics = mixin.$inheritableStatics;
@@ -6682,12 +7202,10 @@ Ext.Base = function(flexSetter) {
         propName = me.$configPrefixed ? cfg.names.internal : name;
         if (ifInitialized) {
           ret = me.hasOwnProperty(propName) ? me[propName] : null;
+        } else if (peek) {
+          ret = me.hasOwnProperty(propName) ? me[propName] : me.config[name];
         } else {
-          if (peek) {
-            ret = me.hasOwnProperty(propName) ? me[propName] : me.config[name];
-          } else {
-            ret = me[cfg.names.get]();
-          }
+          ret = me[cfg.names.get]();
         }
       } else {
         ret = me[name];
@@ -6756,7 +7274,7 @@ Ext.Base = function(flexSetter) {
     }
     return me;
   }, getConfigWatcher:function() {
-    return this.$configWatch || (this.$configWatch = new Ext.mixin.Watchable);
+    return this.$configWatch || (this.$configWatch = new Ext.mixin.Watchable());
   }, watchConfig:function(name, fn, scope) {
     var watcher = this.getConfigWatcher();
     return watcher.on.apply(watcher, arguments);
@@ -6787,10 +7305,8 @@ Ext.Base = function(flexSetter) {
       if (value) {
         if (value.isInstance && !value.destroyed) {
           value.destroy();
-        } else {
-          if (value.parentNode && 'nodeType' in value) {
-            value.parentNode.removeChild(value);
-          }
+        } else if (value.parentNode && 'nodeType' in value) {
+          value.parentNode.removeChild(value);
         }
       }
       me[link] = null;
@@ -6836,13 +7352,11 @@ Ext.Base = function(flexSetter) {
       if (!me.isObservable) {
         me.$reap();
       }
-    } else {
-      if (clearPropertiesOnDestroy) {
-        if (clearPropertiesOnDestroy !== 'async') {
-          Ext.raise('Invalid value for clearPropertiesOnDestroy');
-        }
-        Reaper.add(me);
+    } else if (clearPropertiesOnDestroy) {
+      if (clearPropertiesOnDestroy !== 'async') {
+        Ext.raise('Invalid value for clearPropertiesOnDestroy');
       }
+      Reaper.add(me);
     }
   }});
   BasePrototype.callOverridden = BasePrototype.callParent;
@@ -6953,7 +7467,7 @@ Ext.Base = function(flexSetter) {
     LRU.call(this, config);
   };
   fn.prototype = LRU.prototype;
-  Cache.prototype = Ext.apply(new fn, {maxSize:100, clear:function() {
+  Cache.prototype = Ext.apply(new fn(), {maxSize:100, clear:function() {
     LRU.prototype.clear.call(this, this.evict);
   }, get:function(key) {
     var me = this, entry = me.map[key], value;
@@ -7025,14 +7539,12 @@ Ext.Base = function(flexSetter) {
         preprocessorsProperties = preprocessor.properties;
         if (preprocessorsProperties === true) {
           preprocessors.push(preprocessor.fn);
-        } else {
-          if (preprocessorsProperties) {
-            for (j = 0, subLn = preprocessorsProperties.length; j < subLn; j++) {
-              preprocessorProperty = preprocessorsProperties[j];
-              if (data.hasOwnProperty(preprocessorProperty)) {
-                preprocessors.push(preprocessor.fn);
-                break;
-              }
+        } else if (preprocessorsProperties) {
+          for (j = 0, subLn = preprocessorsProperties.length; j < subLn; j++) {
+            preprocessorProperty = preprocessorsProperties[j];
+            if (data.hasOwnProperty(preprocessorProperty)) {
+              preprocessors.push(preprocessor.fn);
+              break;
             }
           }
         }
@@ -7076,11 +7588,9 @@ Ext.Base = function(flexSetter) {
       if (offset === 'first') {
         defaultPreprocessors.unshift(name);
         return this;
-      } else {
-        if (offset === 'last') {
-          defaultPreprocessors.push(name);
-          return this;
-        }
+      } else if (offset === 'last') {
+        defaultPreprocessors.push(name);
+        return this;
       }
       offset = offset === 'after' ? 1 : -1;
     }
@@ -7325,10 +7835,8 @@ Ext.Inventory.prototype = {_array1:[0], prefixes:null, dotRe:/\./g, wildcardRe:/
 }, getPrefix:function(className) {
   if (className in this.paths) {
     return className;
-  } else {
-    if (className in this.nameToPrefix) {
-      return this.nameToPrefix[className];
-    }
+  } else if (className in this.nameToPrefix) {
+    return this.nameToPrefix[className];
   }
   var prefixes = this.getPrefixes(), length = className.length, items, currChar, prefix, j, jlen;
   while (length-- > 0) {
@@ -7412,7 +7920,7 @@ Ext.Inventory.prototype = {_array1:[0], prefixes:null, dotRe:/\./g, wildcardRe:/
   return me;
 })};
 Ext.ClassManager = function(Class, alias, arraySlice, arrayFrom, global) {
-  var makeCtor = Ext.Class.makeCtor, nameLookupStack = [], namespaceCache = {Ext:{name:'Ext', value:Ext}}, Manager = Ext.apply(new Ext.Inventory, {classes:{}, classCount:0, classState:{}, existCache:{}, instantiators:[], isCreated:function(className) {
+  var makeCtor = Ext.Class.makeCtor, nameLookupStack = [], namespaceCache = {Ext:{name:'Ext', value:Ext}}, Manager = Ext.apply(new Ext.Inventory(), {classes:{}, classCount:0, classState:{}, existCache:{}, instantiators:[], isCreated:function(className) {
     if (typeof className !== 'string' || className.length < 1) {
       throw new Error('[Ext.ClassManager] Invalid classname, must be a string and ' + 'must not be empty');
     }
@@ -7594,14 +8102,12 @@ Ext.ClassManager = function(Class, alias, arraySlice, arrayFrom, global) {
           postprocessorProperties = postprocessor.properties;
           if (postprocessorProperties === true) {
             postprocessors.push(postprocessor.fn);
-          } else {
-            if (postprocessorProperties) {
-              for (j = 0, subLn = postprocessorProperties.length; j < subLn; j++) {
-                postprocessorProperty = postprocessorProperties[j];
-                if (data.hasOwnProperty(postprocessorProperty)) {
-                  postprocessors.push(postprocessor.fn);
-                  break;
-                }
+          } else if (postprocessorProperties) {
+            for (j = 0, subLn = postprocessorProperties.length; j < subLn; j++) {
+              postprocessorProperty = postprocessorProperties[j];
+              if (data.hasOwnProperty(postprocessorProperty)) {
+                postprocessors.push(postprocessor.fn);
+                break;
               }
             }
           }
@@ -7667,12 +8173,10 @@ Ext.ClassManager = function(Class, alias, arraySlice, arrayFrom, global) {
             mixins[i] = Ext.ClassManager.get(cls);
           }
         }
-      } else {
-        if (mixins) {
-          for (key in mixins) {
-            if (Ext.isString(cls = mixins[key])) {
-              mixins[key] = Ext.ClassManager.get(cls);
-            }
+      } else if (mixins) {
+        for (key in mixins) {
+          if (Ext.isString(cls = mixins[key])) {
+            mixins[key] = Ext.ClassManager.get(cls);
           }
         }
       }
@@ -7697,14 +8201,10 @@ Ext.ClassManager = function(Class, alias, arraySlice, arrayFrom, global) {
       compat = data.compatibility;
       if (!compat) {
         compat = false;
-      } else {
-        if (typeof compat === 'number') {
-          compat = true;
-        } else {
-          if (typeof compat !== 'boolean') {
-            compat = Ext.checkVersion(compat);
-          }
-        }
+      } else if (typeof compat === 'number') {
+        compat = true;
+      } else if (typeof compat !== 'boolean') {
+        compat = Ext.checkVersion(compat);
       }
     }
     if (compat) {
@@ -7762,11 +8262,9 @@ Ext.ClassManager = function(Class, alias, arraySlice, arrayFrom, global) {
       if (offset === 'first') {
         defaultPostprocessors.unshift(name);
         return this;
-      } else {
-        if (offset === 'last') {
-          defaultPostprocessors.push(name);
-          return this;
-        }
+      } else if (offset === 'last') {
+        defaultPostprocessors.push(name);
+        return this;
       }
       offset = offset === 'after' ? 1 : -1;
     }
@@ -7794,7 +8292,7 @@ Ext.ClassManager = function(Class, alias, arraySlice, arrayFrom, global) {
       Ext.classSystemMonitor(name, 'Ext.ClassManager#singletonPostProcessor', arguments);
     }
     if (data.singleton) {
-      fn.call(this, name, new cls, data);
+      fn.call(this, name, new cls(), data);
     } else {
       return true;
     }
@@ -8171,15 +8669,13 @@ Ext.define('Ext.mixin.Watchable', {on:function(name, fn, scope) {
   if (userAgent.match(/FB/) && browserName === 'Other') {
     browserName = browserNames.safari;
     engineName = engineNames.webkit;
+  } else if (userAgent.match(/Android.*Chrome/g)) {
+    browserName = 'ChromeMobile';
   } else {
-    if (userAgent.match(/Android.*Chrome/g)) {
-      browserName = 'ChromeMobile';
-    } else {
-      browserMatch = userAgent.match(/OPR\/(\d+.\d+)/);
-      if (browserMatch) {
-        browserName = 'Opera';
-        browserVersion = new Ext.Version(browserMatch[1]);
-      }
+    browserMatch = userAgent.match(/OPR\/(\d+.\d+)/);
+    if (browserMatch) {
+      browserName = 'Opera';
+      browserVersion = new Ext.Version(browserMatch[1]);
     }
   }
   Ext.apply(this, {engineName:engineName, engineVersion:engineVersion, name:browserName, version:browserVersion});
@@ -8283,12 +8779,10 @@ Ext.env.OS = function(userAgent, platform, browserScope) {
         match1 = match[1];
         if (match1 && match1 === 'HTC_') {
           version = new Ext.Version('2.3');
+        } else if (match1 && match1 === 'Silk/') {
+          version = new Ext.Version('2.3');
         } else {
-          if (match1 && match1 === 'Silk/') {
-            version = new Ext.Version('2.3');
-          } else {
-            version = new Ext.Version(match[match.length - 1]);
-          }
+          version = new Ext.Version(match[match.length - 1]);
         }
         break;
       }
@@ -8357,24 +8851,18 @@ Ext.env.OS.prototype = {constructor:Ext.env.OS, is:function(name) {
   var search = window.location.search.match(/deviceType=(Tablet|Phone)/), nativeDeviceType = window.deviceType;
   if (search && search[1]) {
     deviceType = search[1];
+  } else if (nativeDeviceType === 'iPhone') {
+    deviceType = 'Phone';
+  } else if (nativeDeviceType === 'iPad') {
+    deviceType = 'Tablet';
   } else {
-    if (nativeDeviceType === 'iPhone') {
-      deviceType = 'Phone';
+    if (!osEnv.is.Android && !osEnv.is.iOS && !osEnv.is.WindowsPhone && /Windows|Linux|MacOS|ChromeOS/.test(osName)) {
+      deviceType = 'Desktop';
+      Ext.browser.is.WebView = !!Ext.browser.is.Ripple;
+    } else if (osEnv.is.iPad || osEnv.is.RIMTablet || osEnv.is.Android3 || Ext.browser.is.Silk || osEnv.is.Android && userAgent.search(/mobile/i) === -1) {
+      deviceType = 'Tablet';
     } else {
-      if (nativeDeviceType === 'iPad') {
-        deviceType = 'Tablet';
-      } else {
-        if (!osEnv.is.Android && !osEnv.is.iOS && !osEnv.is.WindowsPhone && /Windows|Linux|MacOS|ChromeOS/.test(osName)) {
-          deviceType = 'Desktop';
-          Ext.browser.is.WebView = !!Ext.browser.is.Ripple;
-        } else {
-          if (osEnv.is.iPad || osEnv.is.RIMTablet || osEnv.is.Android3 || Ext.browser.is.Silk || osEnv.is.Android && userAgent.search(/mobile/i) === -1) {
-            deviceType = 'Tablet';
-          } else {
-            deviceType = 'Phone';
-          }
-        }
-      }
+      deviceType = 'Phone';
     }
   }
   if (deviceType === 'Tablet' && osName === 'MacOS') {
@@ -8390,10 +8878,8 @@ Ext.feature = {has:function(name) {
 }, testElements:{}, getTestElement:function(tag, createNew) {
   if (tag === undefined) {
     tag = 'div';
-  } else {
-    if (typeof tag !== 'string') {
-      return tag;
-    }
+  } else if (typeof tag !== 'string') {
+    return tag;
   }
   if (createNew) {
     return document.createElement(tag);
@@ -8437,10 +8923,8 @@ Ext.feature = {has:function(name) {
   var vendorName = Ext.browser.getVendorProperyName(name);
   if (vendorName in object) {
     return vendorName;
-  } else {
-    if (name in object) {
-      return name;
-    }
+  } else if (name in object) {
+    return name;
   }
   return null;
 }, detect:function(isReady) {
@@ -8464,12 +8948,10 @@ Ext.feature = {has:function(name) {
     }
     if (name) {
       supports[name] = has[name] = value;
-    } else {
-      if (names) {
-        while (names.length) {
-          name = names.pop();
-          supports[name] = has[name] = value;
-        }
+    } else if (names) {
+      while (names.length) {
+        name = names.pop();
+        supports[name] = has[name] = value;
       }
     }
   }
@@ -8587,19 +9069,17 @@ Ext.feature = {has:function(name) {
     xmlDoc = new ActiveXObject('Microsoft.xmlDOM');
     xmlDoc.async = false;
     xmlDoc.loadXML(xmlString);
-  } else {
-    if (window.DOMParser) {
-      var parser = new DOMParser;
-      xmlDoc = parser.parseFromString(xmlString, 'text/xml');
-    }
+  } else if (window.DOMParser) {
+    var parser = new DOMParser();
+    xmlDoc = parser.parseFromString(xmlString, 'text/xml');
   }
   return xmlDoc ? !!xmlDoc.lastChild.querySelector : false;
 }}, {name:'XHR2', fn:function() {
-  return window.ProgressEvent && window.FormData && window.XMLHttpRequest && 'withCredentials' in new XMLHttpRequest;
+  return window.ProgressEvent && window.FormData && window.XMLHttpRequest && 'withCredentials' in new XMLHttpRequest();
 }}, {name:'XHRUploadProgress', fn:function() {
   var xhr;
   if (window.XMLHttpRequest && !Ext.browser.is.AndroidStock) {
-    xhr = new XMLHttpRequest;
+    xhr = new XMLHttpRequest();
     return xhr && 'upload' in xhr && 'onprogress' in xhr.upload;
   }
   return false;
@@ -8777,13 +9257,11 @@ Ext.feature = {has:function(name) {
     var values = [], colorValue = 0, regex, match;
     if (colorTxt.indexOf('rgb(') !== -1) {
       values = colorTxt.replace('rgb(', '').replace(')', '').split(', ');
-    } else {
-      if (colorTxt.indexOf('#') !== -1) {
-        regex = colorTxt.length === 7 ? /^#(\S\S)(\S\S)(\S\S)$/ : /^#(\S)(\S)(\S)$/;
-        match = colorTxt.match(regex);
-        if (match) {
-          values = ['0x' + match[1], '0x' + match[2], '0x' + match[3]];
-        }
+    } else if (colorTxt.indexOf('#') !== -1) {
+      regex = colorTxt.length === 7 ? /^#(\S\S)(\S\S)(\S\S)$/ : /^#(\S)(\S)(\S)$/;
+      match = colorTxt.match(regex);
+      if (match) {
+        values = ['0x' + match[1], '0x' + match[2], '0x' + match[3]];
       }
     }
     for (var i = 0; i < values.length; i++) {
@@ -8926,15 +9404,13 @@ Ext.env.Ready = {blocks:(location.search || '').indexOf('ext-pauseReadyFire') > 
     Ext.feature.detect(true);
     if (!me.delay) {
       me.handleReady();
-    } else {
-      if (navigator.standalone) {
-        me.timer = Ext.defer(function() {
-          me.timer = null;
-          me.handleReadySoon();
-        }, 1);
-      } else {
+    } else if (navigator.standalone) {
+      me.timer = Ext.defer(function() {
+        me.timer = null;
         me.handleReadySoon();
-      }
+      }, 1);
+    } else {
+      me.handleReadySoon();
     }
   }
 }, handleReady:function() {
@@ -9072,10 +9548,8 @@ Ext.env.Ready = {blocks:(location.search || '').indexOf('ext-pauseReadyFire') > 
       }
       if (!topContext || !doc.documentElement.doScroll) {
         Ready.pollScroll = Ext.emptyFn;
-      } else {
-        if (Ready.pollScroll()) {
-          return;
-        }
+      } else if (Ready.pollScroll()) {
+        return;
       }
       if (doc.readyState === 'complete') {
         Ready.onReadyEvent({type:'already ' + (doc.readyState || 'body')});
@@ -9120,10 +9594,8 @@ Ext.Loader = new function() {
     var scripts = document.getElementsByTagName('script'), src = scripts[scripts.length - 1].src, path = src.substring(0, src.lastIndexOf('/') + 1), meta = Ext._classPathMetadata, microloader = Ext.Microloader, manifest = Ext.manifest, loadOrder, baseUrl, loadlen, l, loadItem;
     if (src.indexOf('packages/core/src/') !== -1) {
       path = path + '../../';
-    } else {
-      if (src.indexOf('/core/src/class/') !== -1) {
-        path = path + '../../../';
-      }
+    } else if (src.indexOf('/core/src/class/') !== -1) {
+      path = path + '../../../';
     }
     if (!Manager.getPath('Ext')) {
       Manager.setPath('Ext', path + 'src');
@@ -9383,10 +9855,8 @@ Ext.Loader = new function() {
     if (isLoading && !wasLoading) {
       Ready.block();
       Loader.isLoading = !!isLoading;
-    } else {
-      if (!isLoading && wasLoading) {
-        Loader.triggerReady();
-      }
+    } else if (!isLoading && wasLoading) {
+      Loader.triggerReady();
     }
     if (!Loader.scriptsLoading && Loader.missingCount) {
       Ext.defer(function() {
@@ -9414,23 +9884,19 @@ Ext.Loader = new function() {
         propertyValue = data[propertyName];
         if (typeof propertyValue === 'string') {
           dependencies.push(propertyValue);
-        } else {
-          if (propertyValue instanceof Array) {
-            for (j = 0, subLn = propertyValue.length; j < subLn; j++) {
+        } else if (propertyValue instanceof Array) {
+          for (j = 0, subLn = propertyValue.length; j < subLn; j++) {
+            value = propertyValue[j];
+            if (typeof value === 'string') {
+              dependencies.push(value);
+            }
+          }
+        } else if (typeof propertyValue !== 'function') {
+          for (j in propertyValue) {
+            if (propertyValue.hasOwnProperty(j)) {
               value = propertyValue[j];
               if (typeof value === 'string') {
                 dependencies.push(value);
-              }
-            }
-          } else {
-            if (typeof propertyValue !== 'function') {
-              for (j in propertyValue) {
-                if (propertyValue.hasOwnProperty(j)) {
-                  value = propertyValue[j];
-                  if (typeof value === 'string') {
-                    dependencies.push(value);
-                  }
-                }
               }
             }
           }
@@ -9475,23 +9941,19 @@ Ext.Loader = new function() {
           propertyValue = data[propertyName];
           if (typeof propertyValue === 'string') {
             data[propertyName] = Manager.get(propertyValue);
-          } else {
-            if (propertyValue instanceof Array) {
-              for (j = 0, subLn = propertyValue.length; j < subLn; j++) {
-                value = propertyValue[j];
-                if (typeof value === 'string') {
-                  data[propertyName][j] = Manager.get(value);
-                }
+          } else if (propertyValue instanceof Array) {
+            for (j = 0, subLn = propertyValue.length; j < subLn; j++) {
+              value = propertyValue[j];
+              if (typeof value === 'string') {
+                data[propertyName][j] = Manager.get(value);
               }
-            } else {
-              if (typeof propertyValue !== 'function') {
-                for (k in propertyValue) {
-                  if (propertyValue.hasOwnProperty(k)) {
-                    value = propertyValue[k];
-                    if (typeof value === 'string') {
-                      data[propertyName][k] = Manager.get(value);
-                    }
-                  }
+            }
+          } else if (typeof propertyValue !== 'function') {
+            for (k in propertyValue) {
+              if (propertyValue.hasOwnProperty(k)) {
+                value = propertyValue[k];
+                if (typeof value === 'string') {
+                  data[propertyName][k] = Manager.get(value);
                 }
               }
             }
@@ -9514,7 +9976,7 @@ Ext.Loader = new function() {
   });
   Manager.onCreated(Loader.historyPush);
   Loader.init();
-};
+}();
 Ext._endTime = Ext.ticks();
 if (Ext._beforereadyhandler) {
   Ext._beforereadyhandler();
@@ -9733,10 +10195,8 @@ Ext.define('Ext.util.Event', function() {
         } else {
           me._highestNegativePriorityIndex = index;
         }
-      } else {
-        if (hasNegativePriorityIndex) {
-          index = highestNegativePriorityIndex;
-        }
+      } else if (hasNegativePriorityIndex) {
+        index = highestNegativePriorityIndex;
       }
       if (!isNegativePriority && index <= highestNegativePriorityIndex) {
         me._highestNegativePriorityIndex++;
@@ -9821,10 +10281,8 @@ Ext.define('Ext.util.Event', function() {
       if (me._highestNegativePriorityIndex) {
         if (index < me._highestNegativePriorityIndex) {
           me._highestNegativePriorityIndex--;
-        } else {
-          if (index === me._highestNegativePriorityIndex && index === me.listeners.length) {
-            delete me._highestNegativePriorityIndex;
-          }
+        } else if (index === me._highestNegativePriorityIndex && index === me.listeners.length) {
+          delete me._highestNegativePriorityIndex;
         }
       }
       if (listener) {
@@ -9916,10 +10374,8 @@ Ext.define('Ext.util.Event', function() {
               } else {
                 continue;
               }
-            } else {
-              if (isComponent && !CQ.is(firingObservable, delegate, observable)) {
-                continue;
-              }
+            } else if (isComponent && !CQ.is(firingObservable, delegate, observable)) {
+              continue;
             }
           }
           if (isElement) {
@@ -9977,10 +10433,8 @@ Ext.define('Ext.util.Event', function() {
       origin = listener.caller || observable;
       if (namedScope && namedScope.isUp) {
         scope = Ext.lookUpFn(origin, fn);
-      } else {
-        if (!scope || namedScope) {
-          scope = origin.resolveListenerScope(listener.defaultScope);
-        }
+      } else if (!scope || namedScope) {
+        scope = origin.resolveListenerScope(listener.defaultScope);
       }
       if (!scope) {
         Ext.raise('Unable to dynamically resolve scope for "' + listener.ev.name + '" listener on ' + this.observable.id);
@@ -9989,17 +10443,13 @@ Ext.define('Ext.util.Event', function() {
         Ext.raise('No method named "' + fn + '" on ' + (scope.$className || 'scope object.'));
       }
       fn = scope[fn];
-    } else {
-      if (namedScope && namedScope.isController) {
-        scope = (listener.caller || observable).resolveListenerScope(listener.defaultScope);
-        if (!scope) {
-          Ext.raise('Unable to dynamically resolve scope for "' + listener.ev.name + '" listener on ' + this.observable.id);
-        }
-      } else {
-        if (!scope || namedScope) {
-          scope = observable;
-        }
+    } else if (namedScope && namedScope.isController) {
+      scope = (listener.caller || observable).resolveListenerScope(listener.defaultScope);
+      if (!scope) {
+        Ext.raise('Unable to dynamically resolve scope for "' + listener.ev.name + '" listener on ' + this.observable.id);
       }
+    } else if (!scope || namedScope) {
+      scope = observable;
     }
     fireArgs.fn = fn;
     fireArgs.scope = scope;
@@ -10030,7 +10480,7 @@ Ext.define('Ext.util.Event', function() {
       }
     };
   }, createBuffered:function(handler, listener, o, scope, wrapped) {
-    listener.task = new Ext.util.DelayedTask;
+    listener.task = new Ext.util.DelayedTask();
     return function() {
       var fireInfo;
       if (listener.task) {
@@ -10048,7 +10498,7 @@ Ext.define('Ext.util.Event', function() {
     };
   }, createDelayed:function(handler, listener, o, scope, wrapped) {
     return function() {
-      var task = new Ext.util.DelayedTask, fireInfo;
+      var task = new Ext.util.DelayedTask(), fireInfo;
       if (!wrapped) {
         fireInfo = listener.ev.getFireInfo(listener, true);
         handler = fireInfo.fn;
@@ -10111,12 +10561,10 @@ Ext.define('Ext.mixin.Identifiable', function(Identifiable) {
       xtype = me.xtype;
       if (xtype) {
         prefix = defaultIdPrefix + xtype.replace(cleanRe, sep) + sep;
+      } else if (!(prefix = prototype.$className)) {
+        prefix = defaultIdPrefix + 'anonymous' + sep;
       } else {
-        if (!(prefix = prototype.$className)) {
-          prefix = defaultIdPrefix + 'anonymous' + sep;
-        } else {
-          prefix = prefix.replace(cleanRe, sep).toLowerCase() + sep;
-        }
+        prefix = prefix.replace(cleanRe, sep).toLowerCase() + sep;
       }
       prototype.identifiablePrefix = prefix;
     }
@@ -10163,7 +10611,7 @@ Ext.define('Ext.mixin.Observable', function(Observable) {
   }, observe:function(cls, listeners) {
     if (cls) {
       if (!cls.isObservable) {
-        Ext.applyIf(cls, new this);
+        Ext.applyIf(cls, new this());
         this.captureArgs(cls.prototype, cls.fireEventArgs, cls);
       }
       if (Ext.isObject(listeners)) {
@@ -10193,7 +10641,7 @@ Ext.define('Ext.mixin.Observable', function(Observable) {
       var HasListeners = function() {
       }, SuperHL = T.superclass.HasListeners || mixin && mixin.HasListeners || Observable.HasListeners;
       T.prototype.HasListeners = T.HasListeners = HasListeners;
-      HasListeners.prototype = T.hasListeners = new SuperHL;
+      HasListeners.prototype = T.hasListeners = new SuperHL();
     }
     scope = T.prototype.$noClearOnDestroy || {};
     for (i = 0, len = protectedProps.length; i < len; i++) {
@@ -10206,7 +10654,7 @@ Ext.define('Ext.mixin.Observable', function(Observable) {
       return;
     }
     me.$observableInitialized = true;
-    me.hasListeners = me.hasListeners = new me.HasListeners;
+    me.hasListeners = me.hasListeners = new me.HasListeners();
     me.eventedBeforeEventNames = {};
     me.events = me.events || {};
     declaredListeners = self.listeners;
@@ -10341,10 +10789,8 @@ Ext.define('Ext.mixin.Observable', function(Observable) {
         args.push(me);
         if (Ext.isFunction(fn)) {
           ret = fn.apply(scope, args);
-        } else {
-          if (scope && Ext.isString(fn) && Ext.isFunction(scope[fn])) {
-            ret = scope[fn].apply(scope, args);
-          }
+        } else if (scope && Ext.isString(fn) && Ext.isFunction(scope[fn])) {
+          ret = scope[fn].apply(scope, args);
         }
         if (ret === false) {
           return false;
@@ -10714,12 +11160,10 @@ Ext.define('Ext.mixin.Observable', function(Observable) {
               returnValue = v;
             }
             cancel = !!v.cancel;
+          } else if (v === false) {
+            cancel = true;
           } else {
-            if (v === false) {
-              cancel = true;
-            } else {
-              returnValue = v;
-            }
+            returnValue = v;
           }
         }
       };
@@ -10922,7 +11366,7 @@ Ext.define('Ext.promise.Consequence', function(Consequence) {
     me.onFulfilled = onFulfilled;
     me.onRejected = onRejected;
     me.onProgress = onProgress;
-    me.deferred = new Ext.promise.Deferred;
+    me.deferred = new Ext.promise.Deferred();
     me.promise = me.deferred.promise;
   }, trigger:function(action, value) {
     var me = this, deferred = me.deferred;
@@ -11052,7 +11496,7 @@ Ext.define('Ext.promise.Promise', function(ExtPromise) {
       Ext.raise('Invalid parameter: expected an Array or Promise of an Array.');
     }
     return ExtPromise.when(promisesOrValues).then(function(promisesOrValues) {
-      var deferred = new Deferred, remainingToResolve = promisesOrValues.length, results = new Array(remainingToResolve), index, promiseOrValue, resolve, i, len;
+      var deferred = new Deferred(), remainingToResolve = promisesOrValues.length, results = new Array(remainingToResolve), index, promiseOrValue, resolve, i, len;
       if (!remainingToResolve) {
         deferred.resolve(results);
       } else {
@@ -11081,7 +11525,7 @@ Ext.define('Ext.promise.Promise', function(ExtPromise) {
   }, is:function(value) {
     return value != null && (typeof value === 'object' || Ext.isFunction(value)) && Ext.isFunction(value.then);
   }, race:function(promises) {
-    var deferred = new Deferred, len = promises.length, i;
+    var deferred = new Deferred(), len = promises.length, i;
     if (!Ext.isArray(promises)) {
       Ext.raise('Invalid parameter: expected an Array.');
     }
@@ -11094,7 +11538,7 @@ Ext.define('Ext.promise.Promise', function(ExtPromise) {
       throw error;
     });
   }, when:function(value) {
-    var deferred = new Deferred;
+    var deferred = new Deferred();
     deferred.resolve(value);
     return deferred.promise;
   }}, owner:null, constructor:function(owner) {
@@ -11189,15 +11633,15 @@ Ext.define('Ext.Promise', function() {
   }, race:function() {
     return Polyfiller.race.apply(Polyfiller, arguments);
   }, reject:function(reason) {
-    var deferred = new Ext.promise.Deferred;
+    var deferred = new Ext.promise.Deferred();
     deferred.reject(reason);
     return deferred.promise;
   }, resolve:function(value) {
-    var deferred = new Ext.promise.Deferred;
+    var deferred = new Ext.promise.Deferred();
     deferred.resolve(value);
     return deferred.promise;
   }}, constructor:function(action) {
-    var deferred = new Ext.promise.Deferred;
+    var deferred = new Ext.promise.Deferred();
     action(deferred.resolve.bind(deferred), deferred.reject.bind(deferred));
     return deferred.promise;
   }};
@@ -11236,7 +11680,7 @@ Ext.define('Ext.Deferred', function(Deferred) {
       promiseOrValue = undefined;
     }
     milliseconds = Math.max(milliseconds, 1);
-    deferred = new Deferred;
+    deferred = new Deferred();
     deferred.timeoutId = Ext.defer(function() {
       delete deferred.timeoutId;
       deferred.resolve(promiseOrValue);
@@ -11263,7 +11707,7 @@ Ext.define('Ext.Deferred', function(Deferred) {
       var deferred, index, promiseOrValue, remainingToResolve, resolve, results, i, len;
       remainingToResolve = promisesOrValues.length;
       results = new Array(promisesOrValues.length);
-      deferred = new Deferred;
+      deferred = new Deferred();
       if (!remainingToResolve) {
         deferred.resolve(results);
       } else {
@@ -11345,11 +11789,11 @@ Ext.define('Ext.Deferred', function(Deferred) {
       return Ext.Array.reduce.apply(Ext.Array, reduceArguments);
     });
   }, rejected:function(reason) {
-    var deferred = new Ext.Deferred;
+    var deferred = new Ext.Deferred();
     deferred.reject(reason);
     return deferred.promise;
   }, resolved:function(promiseOrValue) {
-    var deferred = new Ext.Deferred;
+    var deferred = new Ext.Deferred();
     deferred.resolve(promiseOrValue);
     return deferred.promise;
   }, sequence:function(fns, scope) {
@@ -11379,7 +11823,7 @@ Ext.define('Ext.Deferred', function(Deferred) {
       values = [];
       remainingToResolve = howMany;
       remainingToReject = promisesOrValues.length - remainingToResolve + 1;
-      deferred = new Deferred;
+      deferred = new Deferred();
       if (promisesOrValues.length < howMany) {
         deferred.reject(new Error('Too few Promises were resolved.'));
       } else {
@@ -11410,7 +11854,7 @@ Ext.define('Ext.Deferred', function(Deferred) {
       return deferred.promise;
     });
   }, timeout:function(promiseOrValue, milliseconds) {
-    var deferred = new Deferred, timeoutId;
+    var deferred = new Deferred(), timeoutId;
     timeoutId = Ext.defer(function() {
       if (timeoutId) {
         deferred.reject(new Error('Promise timed out.'));
@@ -11646,7 +12090,7 @@ Ext.define('Ext.data.request.Base', {mixins:[Ext.mixin.Factoryable], factoryConf
   }
   me.abort = Ext.emptyFn;
 }, createDeferred:function() {
-  var me = this, result = me.result, d = new Ext.Deferred;
+  var me = this, result = me.result, d = new Ext.Deferred();
   if (me.completed) {
     if (me.success) {
       d.resolve(result);
@@ -11819,13 +12263,11 @@ Ext.define('Ext.data.flash.BinaryXhr', {statics:{flashPluginActivated:function()
   if (data.reason === 'complete') {
     this.responseBytes = data.data;
     me.responseHeaders['content-length'] = data.data.length;
+  } else if (data.reason === 'error' || data.reason === 'securityError') {
+    this.statusText = data.text;
+    me.responseHeaders['content-length'] = 0;
   } else {
-    if (data.reason === 'error' || data.reason === 'securityError') {
-      this.statusText = data.text;
-      me.responseHeaders['content-length'] = 0;
-    } else {
-      Ext.raise('Unkown reason code in data: ' + data.reason);
-    }
+    Ext.raise('Unkown reason code in data: ' + data.reason);
   }
 }, onFlashStateChange:function(state, data) {
   var me = this;
@@ -11841,18 +12283,12 @@ Ext.define('Ext.data.request.Ajax', {extend:Ext.data.request.Base, alias:'reques
     type = response.responseType;
     if (type === 'arraybuffer') {
       len = response.byteLength;
-    } else {
-      if (type === 'blob') {
-        len = response.response.size;
-      } else {
-        if ((type === 'json' || type === 'document') && response.response) {
-          len = 0;
-        } else {
-          if ((type === 'text' || type === '' || !type) && response.responseText) {
-            len = response.responseText.length;
-          }
-        }
-      }
+    } else if (type === 'blob') {
+      len = response.response.size;
+    } else if ((type === 'json' || type === 'document') && response.response) {
+      len = 0;
+    } else if ((type === 'text' || type === '' || !type) && response.responseText) {
+      len = response.responseText.length;
     }
   }
   status = status === 1223 ? 204 : status;
@@ -11930,14 +12366,10 @@ Ext.define('Ext.data.request.Ajax', {extend:Ext.data.request.Base, alias:'reques
   if (options.binary || me.binary) {
     if (window.Uint8Array) {
       xhr.responseType = 'arraybuffer';
-    } else {
-      if (xhr.overrideMimeType) {
-        xhr.overrideMimeType('text/plain; charset\x3dx-user-defined');
-      } else {
-        if (!Ext.isIE) {
-          Ext.log.warn('Your browser does not support loading binary data using Ajax.');
-        }
-      }
+    } else if (xhr.overrideMimeType) {
+      xhr.overrideMimeType('text/plain; charset\x3dx-user-defined');
+    } else if (!Ext.isIE) {
+      Ext.log.warn('Your browser does not support loading binary data using Ajax.');
     }
   }
   if (options.responseType) {
@@ -11953,16 +12385,14 @@ Ext.define('Ext.data.request.Ajax', {extend:Ext.data.request.Base, alias:'reques
     if (window.Uint8Array) {
       xhr = me.getXhrInstance();
     } else {
-      xhr = new Ext.data.flash.BinaryXhr;
+      xhr = new Ext.data.flash.BinaryXhr();
     }
+  } else if (me.cors && Ext.isIE9m) {
+    xhr = me.getXdrInstance();
+    me.isXdr = true;
   } else {
-    if (me.cors && Ext.isIE9m) {
-      xhr = me.getXdrInstance();
-      me.isXdr = true;
-    } else {
-      xhr = me.getXhrInstance();
-      me.isXdr = false;
-    }
+    xhr = me.getXhrInstance();
+    me.isXdr = false;
   }
   return xhr;
 }, setupHeaders:function(xhr, options, data, params) {
@@ -11974,10 +12404,8 @@ Ext.define('Ext.data.request.Ajax', {extend:Ext.data.request.Base, alias:'reques
       } else {
         if (xmlData && Ext.isDefined(xmlData)) {
           contentType = 'text/xml';
-        } else {
-          if (jsonData && Ext.isDefined(jsonData)) {
-            contentType = 'application/json';
-          }
+        } else if (jsonData && Ext.isDefined(jsonData)) {
+          contentType = 'application/json';
         }
       }
     }
@@ -12003,13 +12431,13 @@ Ext.define('Ext.data.request.Ajax', {extend:Ext.data.request.Base, alias:'reques
 }, getXdrInstance:function() {
   var xdr;
   if (Ext.ieVersion >= 8) {
-    xdr = new XDomainRequest;
+    xdr = new XDomainRequest();
   } else {
     Ext.raise({msg:'Your browser does not support CORS'});
   }
   return xdr;
 }, getXhrInstance:function() {
-  return new XMLHttpRequest;
+  return new XMLHttpRequest();
 }, processXdrRequest:function(request, xhr) {
   var me = this;
   delete request.headers;
@@ -12109,17 +12537,13 @@ Ext.define('Ext.data.request.Ajax', {extend:Ext.data.request.Base, alias:'reques
     }
     if (xhr.responseType === 'blob') {
       response.responseBlob = xhr.response;
+    } else if (xhr.responseType === 'json') {
+      response.responseJson = xhr.response;
+    } else if (xhr.responseType === 'document') {
+      response.responseXML = xhr.response;
     } else {
-      if (xhr.responseType === 'json') {
-        response.responseJson = xhr.response;
-      } else {
-        if (xhr.responseType === 'document') {
-          response.responseXML = xhr.response;
-        } else {
-          response.responseText = xhr.responseText;
-          response.responseXML = xhr.responseXML;
-        }
-      }
+      response.responseText = xhr.responseText;
+      response.responseXML = xhr.responseXML;
     }
   }
   return response;
@@ -12130,31 +12554,25 @@ Ext.define('Ext.data.request.Ajax', {extend:Ext.data.request.Base, alias:'reques
   var response = xhr.response, responseBody = xhr.responseBody, Cls = Ext.data.flash && Ext.data.flash.BinaryXhr, byteArray, responseText, len, i;
   if (xhr instanceof Cls) {
     byteArray = xhr.responseBytes;
+  } else if (window.Uint8Array) {
+    byteArray = response ? new Uint8Array(response) : [];
+  } else if (Ext.isIE9p) {
+    try {
+      byteArray = (new VBArray(responseBody)).toArray();
+    } catch (e) {
+      byteArray = [];
+    }
+  } else if (Ext.isIE) {
+    if (!this.self.vbScriptInjected) {
+      this.injectVBScript();
+    }
+    getIEByteArray(xhr.responseBody, byteArray = []);
   } else {
-    if (window.Uint8Array) {
-      byteArray = response ? new Uint8Array(response) : [];
-    } else {
-      if (Ext.isIE9p) {
-        try {
-          byteArray = (new VBArray(responseBody)).toArray();
-        } catch (e) {
-          byteArray = [];
-        }
-      } else {
-        if (Ext.isIE) {
-          if (!this.self.vbScriptInjected) {
-            this.injectVBScript();
-          }
-          getIEByteArray(xhr.responseBody, byteArray = []);
-        } else {
-          byteArray = [];
-          responseText = xhr.responseText;
-          len = responseText.length;
-          for (i = 0; i < len; i++) {
-            byteArray.push(responseText.charCodeAt(i) & 255);
-          }
-        }
-      }
+    byteArray = [];
+    responseText = xhr.responseText;
+    len = responseText.length;
+    for (i = 0; i < len; i++) {
+      byteArray.push(responseText.charCodeAt(i) & 255);
     }
   }
   return byteArray;
@@ -12264,12 +12682,10 @@ Ext.define('Ext.data.request.Form', {extend:Ext.data.request.Base, alias:'reques
         if (doc.body) {
           if ((contentNode = doc.body.firstChild) && /pre/i.test(contentNode.tagName)) {
             response.responseText = contentNode.textContent || contentNode.innerText;
+          } else if (contentNode = doc.getElementsByTagName('textarea')[0]) {
+            response.responseText = contentNode.value;
           } else {
-            if (contentNode = doc.getElementsByTagName('textarea')[0]) {
-              response.responseText = contentNode.value;
-            } else {
-              response.responseText = doc.body.textContent || doc.body.innerText;
-            }
+            response.responseText = doc.body.textContent || doc.body.innerText;
           }
         }
         response.responseXML = doc.XMLDocument || doc;
@@ -12379,7 +12795,7 @@ defaultXhrHeader:'XMLHttpRequest'}, constructor:function(config) {
   this.setupMethod(options, method);
   disableCache = options.disableCaching !== false ? options.disableCaching || me.getDisableCaching() : false;
   if (method === 'GET' && disableCache) {
-    url = Ext.urlAppend(url, (options.disableCachingParam || me.getDisableCachingParam()) + '\x3d' + (new Date).getTime());
+    url = Ext.urlAppend(url, (options.disableCachingParam || me.getDisableCachingParam()) + '\x3d' + (new Date()).getTime());
   }
   if ((method === 'GET' || data) && params) {
     url = Ext.urlAppend(url, params);
@@ -12569,10 +12985,8 @@ Ext.define('Ext.AnimationQueue', {singleton:true, constructor:function() {
   listeners.push(arguments);
   if (me.isIdle) {
     me.processIdleQueue();
-  } else {
-    if (!me.idleTimer) {
-      me.idleTimer = Ext.defer(me.whenIdle, 100, me);
-    }
+  } else if (!me.idleTimer) {
+    me.idleTimer = Ext.defer(me.whenIdle, 100, me);
   }
 }, unIdle:function(fn, scope, args) {
   var me = this, listeners = me.idleQueue, i, ln, listener;
@@ -12738,18 +13152,12 @@ Ext.define('Ext.mixin.Bufferable', function(Bufferable) {
     if (id) {
       if (timer.delay) {
         Ext.undefer(id);
-      } else {
-        if (timer.asap) {
-          Ext.unasap(id);
-        } else {
-          if (timer.idle) {
-            Ext.un('idle', id, null, Bufferable.SINGLE);
-          } else {
-            if (timer.raf) {
-              Ext.unraf(id);
-            }
-          }
-        }
+      } else if (timer.asap) {
+        Ext.unasap(id);
+      } else if (timer.idle) {
+        Ext.un('idle', id, null, Bufferable.SINGLE);
+      } else if (timer.raf) {
+        Ext.unraf(id);
       }
       timer.id = null;
     }
@@ -12778,21 +13186,15 @@ Ext.define('Ext.mixin.Bufferable', function(Bufferable) {
     target[timer.flag] = true;
     if (delay) {
       timer.id = Ext.defer(exec, delay);
+    } else if (def.asap) {
+      timer.id = Ext.asap(exec);
+    } else if (def.idle) {
+      timer.id = exec;
+      Ext.on('idle', exec, null, Bufferable.SINGLE);
+    } else if (def.raf) {
+      timer.id = Ext.raf(exec);
     } else {
-      if (def.asap) {
-        timer.id = Ext.asap(exec);
-      } else {
-        if (def.idle) {
-          timer.id = exec;
-          Ext.on('idle', exec, null, Bufferable.SINGLE);
-        } else {
-          if (def.raf) {
-            timer.id = Ext.raf(exec);
-          } else {
-            timer.invoke();
-          }
-        }
-      }
+      timer.invoke();
     }
   }, processClass:function(cls, bufferableMethods) {
     var proto = cls.prototype, inherited = proto.bufferableMethods, def, name;
@@ -12928,15 +13330,13 @@ Ext.define('Ext.ComponentManager', {alternateClassName:'Ext.ComponentMgr', singl
   if (id in all) {
     item = all[id];
     fn.call(scope || item, item);
-  } else {
-    if (id) {
-      if (!Ext.isArray(callbacks[id])) {
-        callbacks[id] = [];
-      }
-      callbacks[id].push(function(item) {
-        fn.call(scope || item, item);
-      });
+  } else if (id) {
+    if (!Ext.isArray(callbacks[id])) {
+      callbacks[id] = [];
     }
+    callbacks[id].push(function(item) {
+      fn.call(scope || item, item);
+    });
   }
 }, notifyAvailable:function(item) {
   var callbacks = this.onAvailableCallbacks[item && item.getId()] || [];
@@ -13240,39 +13640,31 @@ Ext.define('Ext.ComponentQuery', {singleton:true}, function() {
       config = candidate.self && candidate.self.getConfigurator && candidate.self.$config.configs[property];
       if (config) {
         propValue = candidate[config.names.get]();
+      } else if (mustBeOwnProperty && !candidate.hasOwnProperty(property)) {
+        continue;
       } else {
-        if (mustBeOwnProperty && !candidate.hasOwnProperty(property)) {
-          continue;
-        } else {
-          propValue = candidate[property];
-        }
+        propValue = candidate[property];
       }
       if (presenceOnly) {
         result.push(candidate);
-      } else {
-        if (operator === '~\x3d') {
-          if (propValue) {
-            if (!Ext.isArray(propValue)) {
-              propValue = propValue.split(' ');
-            }
-            for (j = 0, propLen = propValue.length; j < propLen; j++) {
-              if (queryOperators[operator](Ext.coerce(propValue[j], compareTo), compareTo)) {
-                result.push(candidate);
-                break;
-              }
-            }
+      } else if (operator === '~\x3d') {
+        if (propValue) {
+          if (!Ext.isArray(propValue)) {
+            propValue = propValue.split(' ');
           }
-        } else {
-          if (operator === '/\x3d') {
-            if (propValue != null && compareTo.test(propValue)) {
+          for (j = 0, propLen = propValue.length; j < propLen; j++) {
+            if (queryOperators[operator](Ext.coerce(propValue[j], compareTo), compareTo)) {
               result.push(candidate);
-            }
-          } else {
-            if (!compareTo ? !!propValue : queryOperators[operator](Ext.coerce(propValue, compareTo), compareTo)) {
-              result.push(candidate);
+              break;
             }
           }
         }
+      } else if (operator === '/\x3d') {
+        if (propValue != null && compareTo.test(propValue)) {
+          result.push(candidate);
+        }
+      } else if (!compareTo ? !!propValue : queryOperators[operator](Ext.coerce(propValue, compareTo), compareTo)) {
+        result.push(candidate);
       }
     }
     return result;
@@ -13302,10 +13694,8 @@ Ext.define('Ext.ComponentQuery', {singleton:true}, function() {
       var format = Ext.String.format, msg = "ComponentQuery selector '{0}' has an unescaped ({1}) character " + 'at the {2} of the attribute value pattern. Usually that indicates ' + 'an error where the opening quote is not followed by the closing ' + 'quote. If you need to match a ({1}) character at the {2} of the ' + 'attribute value, escape the quote character in your pattern: ' + '(\\{1})', match;
       if (match = /^(['"]).*?[^'"]$/.exec(compareTo)) {
         Ext.log.warn(format(msg, selector, match[1], 'beginning'));
-      } else {
-        if (match = /^[^'"].*?(['"])$/.exec(compareTo)) {
-          Ext.log.warn(format(msg, selector, match[1], 'end'));
-        }
+      } else if (match = /^[^'"].*?(['"])$/.exec(compareTo)) {
+        Ext.log.warn(format(msg, selector, match[1], 'end'));
       }
     }
     if (operator === '/\x3d') {
@@ -13337,25 +13727,19 @@ Ext.define('Ext.ComponentQuery', {singleton:true}, function() {
     var i = 0, length = operations.length, operation, workingItems;
     if (!root) {
       workingItems = Ext.ComponentManager.getAll();
-    } else {
-      if (Ext.isIterable(root)) {
-        workingItems = root;
-      } else {
-        if (root.isMixedCollection) {
-          workingItems = root.items;
-        }
-      }
+    } else if (Ext.isIterable(root)) {
+      workingItems = root;
+    } else if (root.isMixedCollection) {
+      workingItems = root.items;
     }
     for (; i < length; i++) {
       operation = operations[i];
       if (operation.mode === '^') {
         workingItems = getAncestors(workingItems || [root]);
+      } else if (operation.mode) {
+        workingItems = getItems(workingItems || [root], operation.mode);
       } else {
-        if (operation.mode) {
-          workingItems = getItems(workingItems || [root], operation.mode);
-        } else {
-          workingItems = filterItems(workingItems || getItems([root]), operation);
-        }
+        workingItems = filterItems(workingItems || getItems([root]), operation);
       }
       if (i === length - 1) {
         return workingItems;
@@ -13383,19 +13767,17 @@ Ext.define('Ext.ComponentQuery', {singleton:true}, function() {
       if (mode) {
         if (mode === '^') {
           active = getItems(active, ' ');
-        } else {
-          if (mode === '\x3e') {
-            items = [];
-            for (j = 0, len = active.length; j < len; ++j) {
-              item = active[j].getRefOwner();
-              if (item) {
-                items.push(item);
-              }
+        } else if (mode === '\x3e') {
+          items = [];
+          for (j = 0, len = active.length; j < len; ++j) {
+            item = active[j].getRefOwner();
+            if (item) {
+              items.push(item);
             }
-            active = items;
-          } else {
-            active = getAncestors(active);
           }
+          active = items;
+        } else {
+          active = getAncestors(active);
         }
       } else {
         active = filterItems(active, operation);
@@ -13478,10 +13860,8 @@ Ext.define('Ext.ComponentQuery', {singleton:true}, function() {
         if (len === 0 || nodeIndex === len) {
           result.push(n);
         }
-      } else {
-        if ((nodeIndex + len) % f === 0) {
-          result.push(n);
-        }
+      } else if ((nodeIndex + len) % f === 0) {
+        result.push(n);
       }
     }
     return result;
@@ -13736,10 +14116,8 @@ Ext.define('Ext.util.Positionable', {mixinId:'positionable', _positionTopLeft:['
   var me = this, region = me.getRegion(), el = me.el, isViewport = el.dom.nodeName === 'BODY' || el.dom.nodeType === 9, scroll = el.getScroll();
   if (local) {
     region.setPosition(0, 0);
-  } else {
-    if (isViewport) {
-      region.setPosition(scroll.left, scroll.top);
-    }
+  } else if (isViewport) {
+    region.setPosition(scroll.left, scroll.top);
   }
   if (size) {
     region.setWidth(size.width);
@@ -14156,10 +14534,8 @@ Ext.define('Ext.dom.Shadow', {extend:Ext.dom.Underlay, alternateClassName:'Ext.S
   if (!('boxShadow' in style)) {
     if ('WebkitBoxShadow' in style) {
       property = 'WebkitBoxShadow';
-    } else {
-      if ('MozBoxShadow' in style) {
-        property = 'MozBoxShadow';
-      }
+    } else if ('MozBoxShadow' in style) {
+      property = 'MozBoxShadow';
     }
   }
   return property;
@@ -14204,13 +14580,11 @@ Ext.define('Ext.dom.ElementEvent', {extend:Ext.util.Event, addListener:function(
       directs = me.directs || (me.directs = new Ext.util.Event(me.observable, name));
       added = directs.addListener(fn, scope, options, caller, manager);
     }
+  } else if (options.capture) {
+    captures = me.captures || (me.captures = new Ext.util.Event(me.observable, name));
+    added = captures.addListener(fn, scope, options, caller, manager);
   } else {
-    if (options.capture) {
-      captures = me.captures || (me.captures = new Ext.util.Event(me.observable, name));
-      added = captures.addListener(fn, scope, options, caller, manager);
-    } else {
-      added = me.callParent([fn, scope, options, caller, manager]);
-    }
+    added = me.callParent([fn, scope, options, caller, manager]);
   }
   return added;
 }, removeListener:function(fn, scope) {
@@ -14229,12 +14603,10 @@ Ext.define('Ext.dom.ElementEvent', {extend:Ext.util.Event, addListener:function(
       }
       if (index !== -1) {
         removed = captures.removeListener(fn, scope, index);
-      } else {
-        if (directCaptures) {
-          index = directCaptures.findListener(fn, scope);
-          if (index !== -1) {
-            removed = directCaptures.removeListener(fn, scope, index);
-          }
+      } else if (directCaptures) {
+        index = directCaptures.findListener(fn, scope);
+        if (index !== -1) {
+          removed = directCaptures.removeListener(fn, scope, index);
         }
       }
     }
@@ -14384,24 +14756,20 @@ Ext.define('Ext.util.Region', function() {
       right = parseInt(box[1], 10) || 0;
       bottom = parseInt(box[2], 10) || 0;
       left = parseInt(box[3], 10) || 0;
-    } else {
-      if (type === 'number') {
-        top = right = bottom = left = box;
+    } else if (type === 'number') {
+      top = right = bottom = left = box;
+    } else if (typeof box.x === 'number') {
+      top = box.y;
+      left = box.x;
+      if (typeof box.right === 'number') {
+        right = box.right;
+        bottom = box.bottom;
       } else {
-        if (typeof box.x === 'number') {
-          top = box.y;
-          left = box.x;
-          if (typeof box.right === 'number') {
-            right = box.right;
-            bottom = box.bottom;
-          } else {
-            right = left + box.width;
-            bottom = top + box.height;
-          }
-        } else {
-          Ext.raise('Not convertible to a Region: ' + box);
-        }
+        right = left + box.width;
+        bottom = top + box.height;
       }
+    } else {
+      Ext.raise('Not convertible to a Region: ' + box);
     }
     return new Region(top, right, bottom, left);
   }, magnitude = [-1, 1, 1, -1], addAnchorOffset = function(target, anchorSize, relativePosition) {
@@ -14461,18 +14829,14 @@ Ext.define('Ext.util.Region', function() {
       if (result.top >= target.bottom && result.bottom > inside.bottom) {
         result.setHeight(Math.max(result.getHeight() + inside.bottom - result.bottom, minHeight));
         result.constrainHeight = true;
-      } else {
-        if (result.bottom <= target.top && result.top < inside.top) {
-          newHeight = Math.max(result.getHeight() + result.top - inside.top, minHeight);
-          result.adjust(result.getHeight() - newHeight);
-          result.constrainHeight = true;
-        } else {
-          if (result.getHeight() > inside.getHeight()) {
-            result.setHeight(Math.max(minHeight, inside.getHeight()));
-            result.setPosition(result.x, 0);
-            result.constrainHeight = true;
-          }
-        }
+      } else if (result.bottom <= target.top && result.top < inside.top) {
+        newHeight = Math.max(result.getHeight() + result.top - inside.top, minHeight);
+        result.adjust(result.getHeight() - newHeight);
+        result.constrainHeight = true;
+      } else if (result.getHeight() > inside.getHeight()) {
+        result.setHeight(Math.max(minHeight, inside.getHeight()));
+        result.setPosition(result.x, 0);
+        result.constrainHeight = true;
       }
     }
   }, checkMinWidth = function(minWidth, result, target, inside) {
@@ -14481,18 +14845,14 @@ Ext.define('Ext.util.Region', function() {
       if (result.left >= target.right && result.right > inside.right) {
         result.setWidth(Math.max(result.getWidth() + inside.right - result.right, minWidth));
         result.constrainWidth = true;
-      } else {
-        if (result.right <= target.left && result.left < inside.left) {
-          newWidth = Math.max(result.getWidth() + result.left - inside.left, minWidth);
-          result.adjust(0, 0, 0, result.getWidth() - newWidth);
-          result.constrainWidth = true;
-        } else {
-          if (result.getWidth() > inside.getWidth()) {
-            result.setWidth(Math.max(minWidth, inside.getWidth()));
-            result.setPosition(0, result.y);
-            result.constrainWidth = true;
-          }
-        }
+      } else if (result.right <= target.left && result.left < inside.left) {
+        newWidth = Math.max(result.getWidth() + result.left - inside.left, minWidth);
+        result.adjust(0, 0, 0, result.getWidth() - newWidth);
+        result.constrainWidth = true;
+      } else if (result.getWidth() > inside.getWidth()) {
+        result.setWidth(Math.max(minWidth, inside.getWidth()));
+        result.setPosition(0, result.y);
+        result.constrainWidth = true;
       }
     }
   };
@@ -14584,7 +14944,7 @@ Ext.define('Ext.util.Region', function() {
       }
     } else {
       p = axis;
-      d = new ExtUtil.Offset;
+      d = new ExtUtil.Offset();
       d.x = this.getOutOfBoundOffsetX(p.x);
       d.y = this.getOutOfBoundOffsetY(p.y);
       return d;
@@ -14592,19 +14952,15 @@ Ext.define('Ext.util.Region', function() {
   }, getOutOfBoundOffsetX:function(p) {
     if (p <= this.x) {
       return this.x - p;
-    } else {
-      if (p >= this.right) {
-        return this.right - p;
-      }
+    } else if (p >= this.right) {
+      return this.right - p;
     }
     return 0;
   }, getOutOfBoundOffsetY:function(p) {
     if (p <= this.y) {
       return this.y - p;
-    } else {
-      if (p >= this.bottom) {
-        return this.bottom - p;
-      }
+    } else if (p >= this.bottom) {
+      return this.bottom - p;
     }
     return 0;
   }, isOutOfBound:function(axis, p) {
@@ -14648,10 +15004,8 @@ Ext.define('Ext.util.Region', function() {
     }
     if (p <= this.x) {
       p -= (p - this.x) * factor;
-    } else {
-      if (p >= this.right) {
-        p -= (p - this.right) * factor;
-      }
+    } else if (p >= this.right) {
+      p -= (p - this.right) * factor;
     }
     return p;
   }, restrictY:function(p, factor) {
@@ -14660,10 +15014,8 @@ Ext.define('Ext.util.Region', function() {
     }
     if (p <= this.y) {
       p -= (p - this.y) * factor;
-    } else {
-      if (p >= this.bottom) {
-        p -= (p - this.bottom) * factor;
-      }
+    } else if (p >= this.bottom) {
+      p -= (p - this.bottom) * factor;
     }
     return p;
   }, alignTo:function(options) {
@@ -14691,7 +15043,7 @@ Ext.define('Ext.util.Region', function() {
       if (position.length === 2) {
         position = new ExtUtil.Point(position[0], position[1]);
       }
-      result = (new Region).copyFrom(me).setPosition(position.x, position.y);
+      result = (new Region()).copyFrom(me).setPosition(position.x, position.y);
     } else {
       align = me.getAlignInfo(align, rtl);
       if (inside) {
@@ -14700,12 +15052,10 @@ Ext.define('Ext.util.Region', function() {
           if (align.position !== 3) {
             align = me.getAlignInfo('r-l', rtl);
           }
-        } else {
-          if (target.right < inside.x) {
-            target.setPosition(inside.x - target.getWidth() + 1, target.y);
-            if (align.position !== 1) {
-              align = me.getAlignInfo('l-r', rtl);
-            }
+        } else if (target.right < inside.x) {
+          target.setPosition(inside.x - target.getWidth() + 1, target.y);
+          if (align.position !== 1) {
+            align = me.getAlignInfo('l-r', rtl);
           }
         }
         if (target.y >= inside.bottom) {
@@ -14713,12 +15063,10 @@ Ext.define('Ext.util.Region', function() {
           if (align.position !== 0) {
             align = me.getAlignInfo('b-t', rtl);
           }
-        } else {
-          if (target.bottom < inside.y) {
-            target.setPosition(target.x, inside.y - target.getHeight() + 1);
-            if (align.position !== 2) {
-              align = me.getAlignInfo('t-b', rtl);
-            }
+        } else if (target.bottom < inside.y) {
+          target.setPosition(target.x, inside.y - target.getHeight() + 1);
+          if (align.position !== 2) {
+            align = me.getAlignInfo('t-b', rtl);
           }
         }
       }
@@ -14767,18 +15115,14 @@ Ext.define('Ext.util.Region', function() {
           constrainedPosition = result.copy();
           if (result.intersect(targetPlusAnchorOffset)) {
             align.position = target.exclude(result, {initialPosition:initialPosition, defaultPosition:align.position, inside:inside, minHeight:options.minHeight, minWidth:options.minWidth, allowX:allowXTranslate, allowY:allowYTranslate, offset:offset, anchorHeight:anchorSize ? anchorSize.y : 0, centerOnSideChange:!!anchorSize});
-          } else {
-            if (options.minWidth && result.getWidth() > inside.getWidth()) {
-              result.setPosition(0, result.y);
-              result.setWidth(Math.max(inside.getWidth(), options.minWidth));
-              result.constrainWidth = true;
-            } else {
-              if (options.minHeight && result.getHeight() > inside.getHeight()) {
-                result.setPosition(result.x, 0);
-                result.setHeight(Math.max(inside.getHeight(), options.minHeight));
-                result.constrainHeight = true;
-              }
-            }
+          } else if (options.minWidth && result.getWidth() > inside.getWidth()) {
+            result.setPosition(0, result.y);
+            result.setWidth(Math.max(inside.getWidth(), options.minWidth));
+            result.constrainWidth = true;
+          } else if (options.minHeight && result.getHeight() > inside.getHeight()) {
+            result.setPosition(result.x, 0);
+            result.setHeight(Math.max(inside.getHeight(), options.minHeight));
+            result.constrainHeight = true;
           }
           result.align = align;
           if (inside.contains(result)) {
@@ -14862,11 +15206,9 @@ Ext.define('Ext.util.Region', function() {
           result = sizeConstrainedSolution;
           other.constrainWidth = sizeConstrainedSolution.region.constrainWidth;
           other.constrainHeight = sizeConstrainedSolution.region.constrainHeight;
-        } else {
-          if (leastBadSolution) {
-            other.copyFrom(leastBadSolution.region);
-            result = leastBadSolution;
-          }
+        } else if (leastBadSolution) {
+          other.copyFrom(leastBadSolution.region);
+          result = leastBadSolution;
         }
       }
       if (result) {
@@ -14945,11 +15287,9 @@ Ext.define('Ext.util.Region', function() {
     if (x.length) {
       y = x[1];
       x = x[0];
-    } else {
-      if (arguments.length === 1) {
-        y = x.y;
-        x = x.x;
-      }
+    } else if (arguments.length === 1) {
+      y = x.y;
+      x = x.x;
     }
     me.top = me.y += y;
     me.right += x;
@@ -15135,25 +15475,17 @@ focusEvents:{focus:1, focusin:1, focusenter:1}, blurEvents:{blur:1, focusout:1, 
       me.fromElement = event.target;
       me.toElement = event.relatedTarget;
     }
-  } else {
-    if (type !== 'keydown') {
-      delete self.forwardTab;
-    }
+  } else if (type !== 'keydown') {
+    delete self.forwardTab;
   }
   if (self.mouseEvents[type]) {
     pointerType = 'mouse';
-  } else {
-    if (self.clickEvents[type]) {
-      pointerType = self.pointerTypeMap[event.pointerType] || (Ext.now() - Ext.event.publisher.Dom.lastTouchEndTime < 1000 ? 'touch' : 'mouse');
-    } else {
-      if (self.pointerEvents[type]) {
-        pointerType = self.pointerTypeMap[event.pointerType] || 'mouse';
-      } else {
-        if (self.touchEvents[type]) {
-          pointerType = 'touch';
-        }
-      }
-    }
+  } else if (self.clickEvents[type]) {
+    pointerType = self.pointerTypeMap[event.pointerType] || (Ext.now() - Ext.event.publisher.Dom.lastTouchEndTime < 1000 ? 'touch' : 'mouse');
+  } else if (self.pointerEvents[type]) {
+    pointerType = self.pointerTypeMap[event.pointerType] || 'mouse';
+  } else if (self.touchEvents[type]) {
+    pointerType = 'touch';
   }
   if (pointerType) {
     me.pointerType = pointerType;
@@ -15170,14 +15502,10 @@ focusEvents:{focus:1, focusin:1, focusenter:1}, blurEvents:{blur:1, focusout:1, 
   var me = this, deltaMode = me.browserEvent.deltaMode, correctedDelta = delta;
   if (deltaMode === 0) {
     correctedDelta = delta * me.WHEEL_PIXEL_SIZE;
-  } else {
-    if (deltaMode === 1) {
-      correctedDelta = delta * me.WHEEL_LINE_SIZE;
-    } else {
-      if (deltaMode === 2) {
-        correctedDelta = delta * me.WHEEL_PAGE_SIZE;
-      }
-    }
+  } else if (deltaMode === 1) {
+    correctedDelta = delta * me.WHEEL_LINE_SIZE;
+  } else if (deltaMode === 2) {
+    correctedDelta = delta * me.WHEEL_PAGE_SIZE;
   }
   return Math.round(correctedDelta);
 }, getChar:function() {
@@ -15196,10 +15524,8 @@ focusEvents:{focus:1, focusin:1, focusenter:1}, blurEvents:{blur:1, focusout:1, 
   if (r == null) {
     if (me.self.keyEventRe.test(e.type)) {
       r = e.charCode || e.keyCode;
-    } else {
-      if ((r = e.button) !== undefined) {
-        r = r & 1 ? 1 : r & 4 ? 2 : r & 2 ? 3 : 0;
-      }
+    } else if ((r = e.button) !== undefined) {
+      r = r & 1 ? 1 : r & 4 ? 2 : r & 2 ? 3 : 0;
     }
   }
   return r;
@@ -15208,12 +15534,10 @@ focusEvents:{focus:1, focusin:1, focusenter:1}, blurEvents:{blur:1, focusout:1, 
   type = type || 'text/plain';
   if (clipboardData && clipboardData.getData) {
     result = clipboardData.getData(type);
-  } else {
-    if (clipIE && clipIE.getData) {
-      typeIE = this.ieMimeType[type];
-      if (typeIE) {
-        result = clipIE.getData(typeIE);
-      }
+  } else if (clipIE && clipIE.getData) {
+    typeIE = this.ieMimeType[type];
+    if (typeIE) {
+      result = clipIE.getData(typeIE);
     }
   }
   return result;
@@ -15561,14 +15885,10 @@ pointerleave:1, MSPointerOver:1, MSPointerOut:1, MSPointerEnter:1, MSPointerLeav
     if (event) {
       if (capture && direct) {
         event = event.directCaptures;
-      } else {
-        if (capture) {
-          event = event.captures;
-        } else {
-          if (direct) {
-            event = event.directs;
-          }
-        }
+      } else if (capture) {
+        event = event.captures;
+      } else if (direct) {
+        event = event.directs;
       }
       if (event) {
         e.setCurrentTarget(element.dom);
@@ -15676,7 +15996,7 @@ pointerleave:1, MSPointerOver:1, MSPointerOut:1, MSPointerEnter:1, MSPointerLeav
   } else {
     prototype.target = defaultView;
   }
-  Dom.instance = new Dom;
+  Dom.instance = new Dom();
 });
 Ext.define('Ext.event.publisher.Gesture', {extend:Ext.event.publisher.Dom, type:'gesture', isCancelEvent:{touchcancel:1, pointercancel:1, MSPointerCancel:1}, isEndEvent:{mouseup:1, touchend:1, pointerup:1, MSPointerUp:1}, handledEvents:[], handledDomEvents:[], constructor:function(config) {
   var me = this, handledDomEvents = me.handledDomEvents, supports = Ext.supports, supportsTouchEvents = supports.TouchEvents, onTouchStart = me.onTouchStart, onTouchMove = me.onTouchMove, onTouchEnd = me.onTouchEnd;
@@ -15694,15 +16014,11 @@ Ext.define('Ext.event.publisher.Gesture', {extend:Ext.event.publisher.Dom, type:
   if (supports.PointerEvents) {
     handledDomEvents.push('pointerdown', 'pointermove', 'pointerup', 'pointercancel');
     me.mousePointerType = 'mouse';
-  } else {
-    if (supports.MSPointerEvents) {
-      handledDomEvents.push('MSPointerDown', 'MSPointerMove', 'MSPointerUp', 'MSPointerCancel');
-      me.mousePointerType = 4;
-    } else {
-      if (supportsTouchEvents) {
-        handledDomEvents.push('touchstart', 'touchmove', 'touchend', 'touchcancel');
-      }
-    }
+  } else if (supports.MSPointerEvents) {
+    handledDomEvents.push('MSPointerDown', 'MSPointerMove', 'MSPointerUp', 'MSPointerCancel');
+    me.mousePointerType = 4;
+  } else if (supportsTouchEvents) {
+    handledDomEvents.push('touchstart', 'touchmove', 'touchend', 'touchcancel');
   }
   if (!handledDomEvents.length || supportsTouchEvents && Ext.os.is.Desktop) {
     handledDomEvents.push('mousedown', 'mousemove', 'mouseup');
@@ -15837,12 +16153,10 @@ Ext.define('Ext.event.publisher.Gesture', {extend:Ext.event.publisher.Dom, type:
     touchSource = touchSources[i];
     if ('identifier' in touchSource) {
       identifier = touchSource.identifier;
+    } else if ('pointerId' in touchSource) {
+      identifier = touchSource.pointerId;
     } else {
-      if ('pointerId' in touchSource) {
-        identifier = touchSource.pointerId;
-      } else {
-        identifier = 1;
-      }
+      identifier = 1;
     }
     touch = activeTouchesMap[identifier];
     if (!touch) {
@@ -16020,7 +16334,7 @@ Ext.define('Ext.event.publisher.Gesture', {extend:Ext.event.publisher.Dom, type:
       stopPropagation.apply(me, arguments);
     };
   }
-  Gesture.instance = Ext.$gesturePublisher = new Gesture;
+  Gesture.instance = Ext.$gesturePublisher = new Gesture();
 });
 Ext.define('Ext.mixin.Templatable', {extend:Ext.Mixin, mixinConfig:{id:'templatable'}, referenceAttributeName:'reference', referenceSelector:'[reference]', getElementConfig:function() {
   return {reference:'element'};
@@ -16257,12 +16571,10 @@ Ext.define('Ext.util.sizemonitor.Scroll', {extend:Ext.util.sizemonitor.Abstract,
   if (!this.destroyed) {
     if (this.hasExpandMonitorScrollChanged && e.target === this.expandMonitor) {
       delete this.hasExpandMonitorScrollChanged;
+    } else if (this.hasShrinkMonitorScrollChanged && e.target === this.shrinkMonitor) {
+      delete this.hasShrinkMonitorScrollChanged;
     } else {
-      if (this.hasShrinkMonitorScrollChanged && e.target === this.shrinkMonitor) {
-        delete this.hasShrinkMonitorScrollChanged;
-      } else {
-        Ext.TaskQueue.requestRead('refresh', this);
-      }
+      Ext.TaskQueue.requestRead('refresh', this);
     }
   }
 }, refreshMonitors:function() {
@@ -16337,7 +16649,7 @@ Ext.define('Ext.event.publisher.ElementSize', {extend:Ext.event.publisher.Publis
   Ext.TaskQueue.flush();
   Ext.Function.fireElevatedHandlers();
 }}}, function(ElementSize) {
-  ElementSize.instance = new ElementSize;
+  ElementSize.instance = new ElementSize();
 });
 Ext.define('Ext.util.paintmonitor.Abstract', {config:{element:null, callback:Ext.emptyFn, scope:null, args:[]}, eventName:'', monitorClass:'', constructor:function(config) {
   this.onElementPainted = this.onElementPainted.bind(this);
@@ -16405,7 +16717,7 @@ Ext.define('Ext.event.publisher.ElementPaint', {extend:Ext.event.publisher.Publi
     element.activeRead = Ext.TaskQueue.requestRead('fireElementPainted', this, [element], !!element.$skipResourceCheck);
   }
 }}, function(ElementPaint) {
-  ElementPaint.instance = new ElementPaint;
+  ElementPaint.instance = new ElementPaint();
 });
 Ext.define('Ext.dom.Element', function(Element) {
   var WIN = window, DOC = document, docEl = DOC.documentElement, WIN_TOP = WIN.top, EMPTY = [], elementIdCounter, windowId, documentId, WIDTH = 'width', HEIGHT = 'height', MIN_WIDTH = 'min-width', MIN_HEIGHT = 'min-height', MAX_WIDTH = 'max-width', MAX_HEIGHT = 'max-height', TOP = 'top', RIGHT = 'right', BOTTOM = 'bottom', LEFT = 'left', VISIBILITY = 'visibility', HIDDEN = 'hidden', DISPLAY = 'display', NONE = 'none', ZINDEX = 'z-index', POSITION = 'position', RELATIVE = 'relative', STATIC = 'static', 
@@ -16501,10 +16813,8 @@ Ext.define('Ext.dom.Element', function(Element) {
     attributes = attributes || {};
     if (attributes.isElement) {
       return domNode ? attributes.dom : attributes;
-    } else {
-      if ('nodeType' in attributes) {
-        return domNode ? attributes : Ext.get(attributes);
-      }
+    } else if ('nodeType' in attributes) {
+      return domNode ? attributes : Ext.get(attributes);
     }
     if (typeof attributes === 'string') {
       return DOC.createTextNode(attributes);
@@ -16625,10 +16935,8 @@ Ext.define('Ext.dom.Element', function(Element) {
       }
       if (id === windowId) {
         return Element.get(WIN);
-      } else {
-        if (id === documentId) {
-          return Element.get(DOC);
-        }
+      } else if (id === documentId) {
+        return Element.get(DOC);
       }
       dom = Ext.getElementById ? Ext.getElementById(id) : DOC.getElementById(id);
       if (dom) {
@@ -16646,10 +16954,8 @@ Ext.define('Ext.dom.Element', function(Element) {
       id = el.id;
       if (el === DOC) {
         el.id = id = documentId;
-      } else {
-        if (el == WIN) {
-          el.id = id = windowId;
-        }
+      } else if (el == WIN) {
+        el.id = id = windowId;
       }
       if (cache.hasOwnProperty(id)) {
         entry = cache[id];
@@ -16718,10 +17024,8 @@ Ext.define('Ext.dom.Element', function(Element) {
     }
     if (Ext.isIE10p || Ext.isEdge || Ext.isiOS) {
       scale = docEl.offsetWidth / WIN.innerWidth;
-    } else {
-      if (Ext.isChromeMobile) {
-        scale = top.outerWidth / top.innerWidth;
-      }
+    } else if (Ext.isChromeMobile) {
+      scale = top.outerWidth / top.innerWidth;
     }
     return scale;
   }, getViewSize:function() {
@@ -16731,7 +17035,7 @@ Ext.define('Ext.dom.Element', function(Element) {
   }, isRelativeUnit:function(size) {
     return !size || relativeUnitRe.test(size);
   }, maskIframes:function() {
-    var iframes = document.getElementsByTagName('iframe'), fly = new Ext.dom.Fly;
+    var iframes = document.getElementsByTagName('iframe'), fly = new Ext.dom.Fly();
     Ext.each(iframes, function(iframe) {
       var myMask;
       myMask = fly.attach(iframe.parentNode).mask();
@@ -16741,11 +17045,11 @@ Ext.define('Ext.dom.Element', function(Element) {
     return propertyCache[prop] || (propertyCache[prop] = prop.replace(msRe, 'ms-').replace(camelRe, camelReplaceFn));
   }, _onWindowFocusChange:function(e) {
     if (Ext.fly(e.target).is(Element.editableSelector)) {
-      lastFocusChange = new Date;
+      lastFocusChange = new Date();
       editableHasFocus = e.type === 'focusin' || e.type === 'pointerup';
     }
   }, _onWindowResize:function() {
-    var documentWidth = docEl.clientWidth, documentHeight = docEl.clientHeight, now = new Date, threshold = 1000, deltaX, deltaY;
+    var documentWidth = docEl.clientWidth, documentHeight = docEl.clientHeight, now = new Date(), threshold = 1000, deltaX, deltaY;
     deltaX = documentWidth - Element._documentWidth;
     deltaY = documentHeight - Element._documentHeight;
     Element._documentWidth = documentWidth;
@@ -16758,7 +17062,7 @@ Ext.define('Ext.dom.Element', function(Element) {
     }
     if (isVirtualKeyboardOpen && deltaX === 0 && deltaY >= Element.minKeyboardHeight) {
       isVirtualKeyboardOpen = false;
-      lastKeyboardClose = new Date;
+      lastKeyboardClose = new Date();
     }
     if (isVirtualKeyboardOpen) {
       return;
@@ -16771,24 +17075,18 @@ Ext.define('Ext.dom.Element', function(Element) {
     type = typeof box;
     if (type === 'number') {
       return {top:box, right:box, bottom:box, left:box};
-    } else {
-      if (type !== 'string') {
-        return box;
-      }
+    } else if (type !== 'string') {
+      return box;
     }
     parts = box.split(' ');
     ln = parts.length;
     if (ln === 1) {
       parts[1] = parts[2] = parts[3] = parts[0];
-    } else {
-      if (ln === 2) {
-        parts[2] = parts[0];
-        parts[3] = parts[1];
-      } else {
-        if (ln === 3) {
-          parts[3] = parts[1];
-        }
-      }
+    } else if (ln === 2) {
+      parts[2] = parts[0];
+      parts[3] = parts[1];
+    } else if (ln === 3) {
+      parts[3] = parts[1];
     }
     return {top:parseFloat(parts[0]) || 0, right:parseFloat(parts[1]) || 0, bottom:parseFloat(parts[2]) || 0, left:parseFloat(parts[3]) || 0};
   }, parseStyles:function(styles) {
@@ -16809,7 +17107,7 @@ Ext.define('Ext.dom.Element', function(Element) {
     box = me.parseBox(box);
     return me.addUnits(box.top, units) + ' ' + me.addUnits(box.right, units) + ' ' + me.addUnits(box.bottom, units) + ' ' + me.addUnits(box.left, units);
   }, unmaskIframes:function() {
-    var iframes = document.getElementsByTagName('iframe'), fly = new Ext.dom.Fly;
+    var iframes = document.getElementsByTagName('iframe'), fly = new Ext.dom.Fly();
     Ext.each(iframes, function(iframe) {
       fly.attach(iframe.parentNode).unmask();
     });
@@ -16830,19 +17128,17 @@ Ext.define('Ext.dom.Element', function(Element) {
               data += Ext.String.format('{0}\x3d{1}\x26', encoder(name), encoder(hasValue ? opt.value : opt.text));
             }
           }
-        } else {
-          if (!/file|undefined|reset|button/i.test(type)) {
-            if (!(/radio|checkbox/i.test(type) && !element.checked) && !(type === 'submit' && hasSubmit)) {
-              data += encoder(name) + '\x3d' + encoder(element.value) + '\x26';
-              hasSubmit = /submit/i.test(type);
-            }
+        } else if (!/file|undefined|reset|button/i.test(type)) {
+          if (!(/radio|checkbox/i.test(type) && !element.checked) && !(type === 'submit' && hasSubmit)) {
+            data += encoder(name) + '\x3d' + encoder(element.value) + '\x26';
+            hasSubmit = /submit/i.test(type);
           }
         }
       }
     }
     return data.substr(0, data.length - 1);
   }, getCommonAncestor:function(nodeA, nodeB, returnDom) {
-    caFly = caFly || new Ext.dom.Fly;
+    caFly = caFly || new Ext.dom.Fly();
     caFly.attach(Ext.getDom(nodeA));
     while (!caFly.isAncestor(nodeB)) {
       if (caFly.dom.parentNode) {
@@ -16920,17 +17216,15 @@ Ext.define('Ext.dom.Element', function(Element) {
     var totalSize = 0, sidesArr = (sides || '').match(wordsRe), styleSides = [], len = sidesArr.length, side, i;
     if (len === 1) {
       totalSize = parseFloat(this.getStyle(styles[sidesArr[0]])) || 0;
-    } else {
-      if (len) {
-        for (i = 0; i < len; i++) {
-          side = sidesArr[i];
-          styleSides.push(styles[side]);
-        }
-        styleSides = this.getStyle(styleSides);
-        for (i = 0; i < len; i++) {
-          side = sidesArr[i];
-          totalSize += parseFloat(styleSides[styles[side]]) || 0;
-        }
+    } else if (len) {
+      for (i = 0; i < len; i++) {
+        side = sidesArr[i];
+        styleSides.push(styles[side]);
+      }
+      styleSides = this.getStyle(styleSides);
+      for (i = 0; i < len; i++) {
+        side = sidesArr[i];
+        totalSize += parseFloat(styleSides[styles[side]]) || 0;
       }
     }
     return totalSize;
@@ -16955,19 +17249,17 @@ Ext.define('Ext.dom.Element', function(Element) {
       el = Ext.getDom(el);
       me.dom.appendChild(el);
       return !returnDom ? Ext.get(el) : el;
-    } else {
-      if (el.length) {
-        insertEl = Ext.fly(DOC.createDocumentFragment());
-        eLen = el.length;
-        for (e = 0; e < eLen; e++) {
-          insertEl.appendChild(el[e], returnDom);
-        }
-        el = Ext.Array.toArray(insertEl.dom.childNodes);
-        me.dom.appendChild(insertEl.dom);
-        return returnDom ? el : new Ext.dom.CompositeElementLite(el);
-      } else {
-        return me.createChild(el, null, returnDom);
+    } else if (el.length) {
+      insertEl = Ext.fly(DOC.createDocumentFragment());
+      eLen = el.length;
+      for (e = 0; e < eLen; e++) {
+        insertEl.appendChild(el[e], returnDom);
       }
+      el = Ext.Array.toArray(insertEl.dom.childNodes);
+      me.dom.appendChild(insertEl.dom);
+      return returnDom ? el : new Ext.dom.CompositeElementLite(el);
+    } else {
+      return me.createChild(el, null, returnDom);
     }
   }, appendTo:function(el) {
     Ext.getDom(el).appendChild(this.dom);
@@ -16998,7 +17290,7 @@ Ext.define('Ext.dom.Element', function(Element) {
     }
   }, cacheScrollValues:function() {
     var me = this, scrollValues = [], scrolledDescendants = [], descendants, descendant, i, len;
-    scrollFly = scrollFly || new Ext.dom.Fly;
+    scrollFly = scrollFly || new Ext.dom.Fly();
     descendants = me.query('*');
     for (i = 0, len = descendants.length; i < len; i++) {
       descendant = descendants[i];
@@ -17070,14 +17362,10 @@ Ext.define('Ext.dom.Element', function(Element) {
     if (dom) {
       if (dom === DOC.body) {
         Ext.raise('Cannot destroy body element.');
-      } else {
-        if (dom === DOC) {
-          Ext.raise('Cannot destroy document object.');
-        } else {
-          if (dom === WIN) {
-            Ext.raise('Cannot destroy window object');
-          }
-        }
+      } else if (dom === DOC) {
+        Ext.raise('Cannot destroy document object.');
+      } else if (dom === WIN) {
+        Ext.raise('Cannot destroy window object');
       }
     }
     if (dom && dom.parentNode) {
@@ -17112,7 +17400,7 @@ Ext.define('Ext.dom.Element', function(Element) {
     var dom = this.dom;
     dom.parentNode.replaceChild(Ext.getDom(element), dom);
   }, doScrollIntoView:function(container, hscroll, animate, highlight, getScrollX, scrollTo) {
-    scrollFly = scrollFly || new Ext.dom.Fly;
+    scrollFly = scrollFly || new Ext.dom.Fly();
     var me = this, dom = me.dom, scrollX = scrollFly.attach(container)[getScrollX](), scrollY = container.scrollTop, position = me.getScrollIntoViewXY(container, scrollX, scrollY), newScrollX = position.x, newScrollY = position.y;
     if (highlight) {
       if (animate) {
@@ -17278,10 +17566,8 @@ Ext.define('Ext.dom.Element', function(Element) {
       floating = me.adjustDirect2DDimension(HEIGHT);
       if (preciseHeight) {
         height += floating;
-      } else {
-        if (floating > 0 && floating < 0.5) {
-          height++;
-        }
+      } else if (floating > 0 && floating < 0.5) {
+        height++;
       }
     }
     if (contentHeight) {
@@ -17296,15 +17582,13 @@ Ext.define('Ext.dom.Element', function(Element) {
     var me = this, offsetParent, x = me.getStyle('left');
     if (!x || x === 'auto') {
       x = 0;
+    } else if (pxRe.test(x)) {
+      x = parseFloat(x);
     } else {
-      if (pxRe.test(x)) {
-        x = parseFloat(x);
-      } else {
-        x = me.getX();
-        offsetParent = me.dom.offsetParent;
-        if (offsetParent) {
-          x -= Ext.fly(offsetParent).getX();
-        }
+      x = me.getX();
+      offsetParent = me.dom.offsetParent;
+      if (offsetParent) {
+        x -= Ext.fly(offsetParent).getX();
       }
     }
     return x;
@@ -17312,28 +17596,24 @@ Ext.define('Ext.dom.Element', function(Element) {
     var me = this, offsetParent, style = me.getStyle(['left', 'top']), x = style.left, y = style.top;
     if (!x || x === 'auto') {
       x = 0;
+    } else if (pxRe.test(x)) {
+      x = parseFloat(x);
     } else {
-      if (pxRe.test(x)) {
-        x = parseFloat(x);
-      } else {
-        x = me.getX();
-        offsetParent = me.dom.offsetParent;
-        if (offsetParent) {
-          x -= Ext.fly(offsetParent).getX();
-        }
+      x = me.getX();
+      offsetParent = me.dom.offsetParent;
+      if (offsetParent) {
+        x -= Ext.fly(offsetParent).getX();
       }
     }
     if (!y || y === 'auto') {
       y = 0;
+    } else if (pxRe.test(y)) {
+      y = parseFloat(y);
     } else {
-      if (pxRe.test(y)) {
-        y = parseFloat(y);
-      } else {
-        y = me.getY();
-        offsetParent = me.dom.offsetParent;
-        if (offsetParent) {
-          y -= Ext.fly(offsetParent).getY();
-        }
+      y = me.getY();
+      offsetParent = me.dom.offsetParent;
+      if (offsetParent) {
+        y -= Ext.fly(offsetParent).getY();
       }
     }
     return [x, y];
@@ -17341,15 +17621,13 @@ Ext.define('Ext.dom.Element', function(Element) {
     var me = this, offsetParent, y = me.getStyle('top');
     if (!y || y === 'auto') {
       y = 0;
+    } else if (pxRe.test(y)) {
+      y = parseFloat(y);
     } else {
-      if (pxRe.test(y)) {
-        y = parseFloat(y);
-      } else {
-        y = me.getY();
-        offsetParent = me.dom.offsetParent;
-        if (offsetParent) {
-          y -= Ext.fly(offsetParent).getY();
-        }
+      y = me.getY();
+      offsetParent = me.dom.offsetParent;
+      if (offsetParent) {
+        y -= Ext.fly(offsetParent).getY();
       }
     }
     return y;
@@ -17409,24 +17687,18 @@ Ext.define('Ext.dom.Element', function(Element) {
       if (size > viewSize || start < viewStart) {
         align = align || 'start';
         force = true;
-      } else {
-        if (end > viewEnd) {
-          align = align || 'end';
-          force = true;
-        }
+      } else if (end > viewEnd) {
+        align = align || 'end';
+        force = true;
       }
     }
     if (force) {
       if (align === 'start') {
         ret = start;
-      } else {
-        if (align === 'center') {
-          ret = Math.max(0, start - Math.floor(viewSize / 2));
-        } else {
-          if (align === 'end') {
-            ret = Math.max(0, end - viewSize);
-          }
-        }
+      } else if (align === 'center') {
+        ret = Math.max(0, start - Math.floor(viewSize / 2));
+      } else if (align === 'end') {
+        ret = Math.max(0, end - viewSize);
       }
     }
     return ret;
@@ -17522,21 +17794,17 @@ Ext.define('Ext.dom.Element', function(Element) {
       direction = selectDir[direction] || direction || 'forward';
       if (dom.setSelectionRange) {
         dom.setSelectionRange(start, end, direction);
-      } else {
-        if (dom.createTextRange) {
-          if (start > end) {
-            start = end;
-          }
-          range = dom.createTextRange();
-          range.moveStart('character', start);
-          range.moveEnd('character', -(len - end));
-          range.select();
+      } else if (dom.createTextRange) {
+        if (start > end) {
+          start = end;
         }
+        range = dom.createTextRange();
+        range.moveStart('character', start);
+        range.moveEnd('character', -(len - end));
+        range.select();
       }
-    } else {
-      if (!inputTypeSelectionSupported.test(dom.type)) {
-        Ext.raise('Input type of "' + dom.type + '" does not support setSelectionRange');
-      }
+    } else if (!inputTypeSelectionSupported.test(dom.type)) {
+      Ext.raise('Input type of "' + dom.type + '" does not support setSelectionRange');
     }
     return me;
   }, getTop:function(local) {
@@ -17575,10 +17843,8 @@ Ext.define('Ext.dom.Element', function(Element) {
       floating = me.adjustDirect2DDimension(WIDTH);
       if (preciseWidth) {
         width += floating;
-      } else {
-        if (floating > 0 && floating < 0.5) {
-          width++;
-        }
+      } else if (floating > 0 && floating < 0.5) {
+        width++;
       }
     }
     if (contentWidth) {
@@ -17675,16 +17941,12 @@ Ext.define('Ext.dom.Element', function(Element) {
     var dom = this.dom, is;
     if (!selector) {
       is = true;
+    } else if (!dom.tagName) {
+      is = false;
+    } else if (Ext.isFunction(selector)) {
+      is = selector(dom);
     } else {
-      if (!dom.tagName) {
-        is = false;
-      } else {
-        if (Ext.isFunction(selector)) {
-          is = selector(dom);
-        } else {
-          is = dom[Ext.supports.matchesSelector](selector);
-        }
-      }
+      is = dom[Ext.supports.matchesSelector](selector);
     }
     return is;
   }, isAncestor:function(el) {
@@ -17695,13 +17957,11 @@ Ext.define('Ext.dom.Element', function(Element) {
       }
       if (dom.contains) {
         return dom.contains(child);
+      } else if (dom.compareDocumentPosition) {
+        return !!(dom.compareDocumentPosition(child) & 16);
       } else {
-        if (dom.compareDocumentPosition) {
-          return !!(dom.compareDocumentPosition(child) & 16);
-        } else {
-          while (child = child.parentNode) {
-            ret = child === dom || ret;
-          }
+        while (child = child.parentNode) {
+          ret = child === dom || ret;
         }
       }
     }
@@ -17726,7 +17986,7 @@ Ext.define('Ext.dom.Element', function(Element) {
     }
     mode = mode || 3;
     if (!visFly) {
-      visFly = new Ext.dom.Fly;
+      visFly = new Ext.dom.Fly();
     }
     for (end = dom.ownerDocument.documentElement; dom !== end; dom = dom.parentNode) {
       if (!dom || dom.nodeType === 11) {
@@ -17824,10 +18084,8 @@ Ext.define('Ext.dom.Element', function(Element) {
     if (me.dom.tagName !== 'BODY') {
       if (!pos && me.isStyle(POSITION, STATIC)) {
         me.setStyle(POSITION, RELATIVE);
-      } else {
-        if (pos) {
-          me.setStyle(POSITION, pos);
-        }
+      } else if (pos) {
+        me.setStyle(POSITION, pos);
       }
       if (zIndex) {
         me.setStyle(ZINDEX, zIndex);
@@ -17888,11 +18146,9 @@ Ext.define('Ext.dom.Element', function(Element) {
     if (!cls) {
       cls = Ext.baseCSSPrefix + 'repaint';
       on = !(off = false);
-    } else {
-      if (state != null) {
-        on = state;
-        off = !state;
-      }
+    } else if (state != null) {
+      on = state;
+      off = !state;
     }
     me.toggleCls(cls, on);
     if (!me.repaintTimer) {
@@ -17963,14 +18219,12 @@ Ext.define('Ext.dom.Element', function(Element) {
       }
       if (removed) {
         me.setClassMap(map, true);
-      } else {
-        if (added) {
-          list = list.join(' ');
-          if (!Ext.isIE8 && dom instanceof SVGElement) {
-            dom.setAttribute('class', list);
-          } else {
-            dom.className = list;
-          }
+      } else if (added) {
+        list = list.join(' ');
+        if (!Ext.isIE8 && dom instanceof SVGElement) {
+          dom.setAttribute('class', list);
+        } else {
+          dom.className = list;
         }
       }
     }
@@ -18021,12 +18275,10 @@ Ext.define('Ext.dom.Element', function(Element) {
       animate = deltaY;
       deltaY = deltaX[1];
       deltaX = deltaX[0];
-    } else {
-      if (typeof deltaX !== 'number') {
-        animate = deltaY;
-        deltaY = deltaX.y;
-        deltaX = deltaX.x;
-      }
+    } else if (typeof deltaX !== 'number') {
+      animate = deltaY;
+      deltaY = deltaX.y;
+      deltaX = deltaX.x;
     }
     if (deltaX) {
       me.scrollTo('left', me.constrainScrollLeft(dom.scrollLeft + deltaX), animate);
@@ -18058,13 +18310,11 @@ Ext.define('Ext.dom.Element', function(Element) {
     var isElementArray, elements;
     if (typeof selector === 'string') {
       elements = this.query(selector, !composite);
+    } else if (selector.length === undefined) {
+      Ext.raise('Invalid selector specified: ' + selector);
     } else {
-      if (selector.length === undefined) {
-        Ext.raise('Invalid selector specified: ' + selector);
-      } else {
-        elements = selector;
-        isElementArray = true;
-      }
+      elements = selector;
+      isElementArray = true;
     }
     return composite ? new Ext.CompositeElement(elements, !isElementArray) : new Ext.CompositeElementLite(elements, true);
   }, selectNode:function(selector, asDom) {
@@ -18076,20 +18326,16 @@ Ext.define('Ext.dom.Element', function(Element) {
         value = attributes[attribute];
         if (attribute === 'style') {
           me.applyStyles(value);
-        } else {
-          if (attribute === 'cls') {
-            dom.className = value;
+        } else if (attribute === 'cls') {
+          dom.className = value;
+        } else if (useSet !== false) {
+          if (value === undefined) {
+            dom.removeAttribute(attribute);
           } else {
-            if (useSet !== false) {
-              if (value === undefined) {
-                dom.removeAttribute(attribute);
-              } else {
-                dom.setAttribute(attribute, value);
-              }
-            } else {
-              dom[attribute] = value;
-            }
+            dom.setAttribute(attribute, value);
           }
+        } else {
+          dom[attribute] = value;
         }
       }
     }
@@ -18172,17 +18418,13 @@ Ext.define('Ext.dom.Element', function(Element) {
     }
     if (x === null) {
       style.left = 'auto';
-    } else {
-      if (x !== undefined) {
-        style.left = x + 'px';
-      }
+    } else if (x !== undefined) {
+      style.left = x + 'px';
     }
     if (y === null) {
       style.top = 'auto';
-    } else {
-      if (y !== undefined) {
-        style.top = y + 'px';
-      }
+    } else if (y !== undefined) {
+      style.top = y + 'px';
     }
     if (me.shadow || me.shim) {
       me.syncUnderlays();
@@ -18478,8 +18720,8 @@ Ext.define('Ext.dom.Element', function(Element) {
       this.dom.style[transformStyleName] = 'translate3d(' + (x || 0) + 'px, ' + (y || 0) + 'px, ' + (z || 0) + 'px)';
     };
   }(), unwrap:function() {
-    var dom = this.dom, parentNode = dom.parentNode, activeElement = (activeElFly || (activeElFly = new Ext.dom.Fly)).attach(Ext.Element.getActiveElement()), grandparentNode, cached, resumeFocus, tabIndex;
-    grannyFly = grannyFly || new Ext.dom.Fly;
+    var dom = this.dom, parentNode = dom.parentNode, activeElement = (activeElFly || (activeElFly = new Ext.dom.Fly())).attach(Ext.Element.getActiveElement()), grandparentNode, cached, resumeFocus, tabIndex;
+    grannyFly = grannyFly || new Ext.dom.Fly();
     cached = Ext.cache[activeElement.dom.id];
     if (cached) {
       activeElement = cached;
@@ -18523,7 +18765,7 @@ Ext.define('Ext.dom.Element', function(Element) {
   }, update:function(html) {
     return this.setHtml(html);
   }, wrap:function(config, returnDom, selector) {
-    var me = this, dom = me.dom, result = Ext.DomHelper.insertBefore(dom, config || {tag:'div'}, !returnDom), newEl = (wrapFly || (wrapFly = new Ext.dom.Fly)).attach(Ext.getDom(result)), target = newEl, activeElement = (activeElFly || (activeElFly = new Ext.dom.Fly)).attach(Ext.Element.getActiveElement()), cached, resumeFocus, tabIndex;
+    var me = this, dom = me.dom, result = Ext.DomHelper.insertBefore(dom, config || {tag:'div'}, !returnDom), newEl = (wrapFly || (wrapFly = new Ext.dom.Fly())).attach(Ext.getDom(result)), target = newEl, activeElement = (activeElFly || (activeElFly = new Ext.dom.Fly())).attach(Ext.Element.getActiveElement()), cached, resumeFocus, tabIndex;
     cached = Ext.cache[activeElement.dom.id];
     if (cached) {
       activeElement = cached;
@@ -18587,13 +18829,11 @@ Ext.define('Ext.dom.Element', function(Element) {
             tabbable = hasIndex && tabIndex >= 0 ? true : false;
           }
         }
+      } else if (dom.contentEditable === 'true' || Ext.Element.naturallyTabbableTags[nodeName]) {
+        tabbable = hasIndex && tabIndex < 0 ? false : true;
       } else {
-        if (dom.contentEditable === 'true' || Ext.Element.naturallyTabbableTags[nodeName]) {
-          tabbable = hasIndex && tabIndex < 0 ? false : true;
-        } else {
-          if (hasIndex && tabIndex >= 0) {
-            tabbable = true;
-          }
+        if (hasIndex && tabIndex >= 0) {
+          tabbable = true;
         }
       }
       if (Ext.isIE8 && nodeName === 'INPUT' && dom.type === 'hidden') {
@@ -18605,10 +18845,8 @@ Ext.define('Ext.dom.Element', function(Element) {
   }, ripplingCls:Ext.baseCSSPrefix + 'rippling', ripplingTransitionCls:Ext.baseCSSPrefix + 'ripple-transition', ripplingUnboundCls:Ext.baseCSSPrefix + 'rippling-unbound', rippleBubbleCls:Ext.baseCSSPrefix + 'ripple-bubble', rippleContainerCls:Ext.baseCSSPrefix + 'ripple-container', rippleWrapperCls:Ext.baseCSSPrefix + 'ripple-wrapper', noRippleDisplayMap:{table:1, 'table-row':1, 'table-row-group':1}, noRippleTagMap:{TABLE:1, TR:1, TBODY:1}, ripple:function(event, options) {
     if (options === true || !options) {
       options = {};
-    } else {
-      if (Ext.isString(options)) {
-        options = {color:options};
-      }
+    } else if (Ext.isString(options)) {
+      options = {color:options};
     }
     var me = this, rippleParent = Ext.isString(options.delegate) ? me.down(options.delegate) : me, rippleMeasureEl = Ext.isString(options.measureSelector) ? me.down(options.measureSelector) : null, color = window.getComputedStyle(rippleParent.dom).color, unbound = options.bound === false, position = options.position, ripplingCls = me.ripplingCls, ripplingTransitionCls = me.ripplingTransitionCls, ripplingUnboundCls = me.ripplingUnboundCls, rippleBubbleCls = me.rippleBubbleCls, rippleContainerCls = 
     me.rippleContainerCls, rippleWrapperCls = me.rippleWrapperCls, offset, width, height, rippleDiameter, center, measureElWidth, measureElHeight, rippleSize, pos, posX, posY, rippleWrapper, rippleContainer, rippleBubble, rippleDestructor, rippleClearFn, rippleDestructionTimer, rippleBox, unboundEl, unboundElData, timeout;
@@ -18629,10 +18867,8 @@ Ext.define('Ext.dom.Element', function(Element) {
       }
       if (options.diameterLimit === undefined || options.diameterLimit === true) {
         rippleDiameter = Math.min(rippleDiameter, Element.maxRippleDiameter);
-      } else {
-        if (options.diameterLimit && options.diameterLimit !== false && options.diameterLimit !== 0) {
-          rippleDiameter = Math.min(rippleDiameter, options.diameterLimit);
-        }
+      } else if (options.diameterLimit && options.diameterLimit !== false && options.diameterLimit !== 0) {
+        rippleDiameter = Math.min(rippleDiameter, options.diameterLimit);
       }
       center = [offset[0] + width / 2, offset[1] + height / 2];
       if (unbound) {
@@ -18651,10 +18887,8 @@ Ext.define('Ext.dom.Element', function(Element) {
       if (Ext.isString(event)) {
         options.color = event;
         event = null;
-      } else {
-        if (event && !event.isEvent) {
-          event = new Ext.event.Event(event);
-        }
+      } else if (event && !event.isEvent) {
+        event = new Ext.event.Event(event);
       }
       if (event && event.isEvent) {
         if (event.browserEvent.$preventRipple) {
@@ -18771,7 +19005,7 @@ Ext.define('Ext.dom.Element', function(Element) {
     if (!len) {
       return selection;
     }
-    fly = new Ext.dom.Fly;
+    fly = new Ext.dom.Fly();
     for (i = 0; i < len; i++) {
       node = nodes[i];
       tabIndex = +node.getAttribute('tabIndex');
@@ -18970,15 +19204,13 @@ Ext.define('Ext.dom.Element', function(Element) {
     var el = obj && Ext.getDom(obj, true), sandboxPrefix, id;
     if (!el) {
       id = oldId(obj, prefix);
-    } else {
-      if (!(id = el.id)) {
-        id = oldId(null, prefix || Element.prototype.identifiablePrefix);
-        if (Ext.isSandboxed) {
-          sandboxPrefix = Ext.sandboxPrefix || (Ext.sandboxPrefix = Ext.sandboxName.toLowerCase() + '-');
-          id = sandboxPrefix + id;
-        }
-        el.id = id;
+    } else if (!(id = el.id)) {
+      id = oldId(null, prefix || Element.prototype.identifiablePrefix);
+      if (Ext.isSandboxed) {
+        sandboxPrefix = Ext.sandboxPrefix || (Ext.sandboxPrefix = Ext.sandboxName.toLowerCase() + '-');
+        id = sandboxPrefix + id;
       }
+      el.id = id;
     }
     return id;
   };
@@ -18996,60 +19228,56 @@ Ext.define('Ext.dom.Element', function(Element) {
     if (!Ext.isIE11) {
       eventMap[mouseleave] = 'pointerleave';
     }
-  } else {
-    if (supports.MSPointerEvents) {
-      eventMap[pointerdown] = MSPointerDown;
-      eventMap[pointermove] = MSPointerMove;
-      eventMap[pointerup] = MSPointerUp;
-      eventMap[pointercancel] = MSPointerCancel;
-      eventMap[mousedown] = MSPointerDown;
-      eventMap[mousemove] = MSPointerMove;
-      eventMap[mouseup] = MSPointerUp;
-      eventMap[touchstart] = MSPointerDown;
-      eventMap[touchmove] = MSPointerMove;
-      eventMap[touchend] = MSPointerUp;
-      eventMap[touchcancel] = MSPointerCancel;
-      eventMap[mouseover] = 'MSPointerOver';
-      eventMap[mouseout] = 'MSPointerOut';
-    } else {
-      if (supports.TouchEvents) {
-        eventMap[pointerdown] = touchstart;
-        eventMap[pointermove] = touchmove;
-        eventMap[pointerup] = touchend;
-        eventMap[pointercancel] = touchcancel;
-        eventMap[mousedown] = touchstart;
-        eventMap[mousemove] = touchmove;
-        eventMap[mouseup] = touchend;
-        eventMap[click] = tap;
-        eventMap[dblclick] = doubletap;
-        if (Ext.os.is.Desktop) {
-          eventMap[touchstart] = mousedown;
-          eventMap[touchmove] = mousemove;
-          eventMap[touchend] = mouseup;
-          eventMap[touchcancel] = mouseup;
-          additiveEvents[mousedown] = mousedown;
-          additiveEvents[mousemove] = mousemove;
-          additiveEvents[mouseup] = mouseup;
-          additiveEvents[touchstart] = touchstart;
-          additiveEvents[touchmove] = touchmove;
-          additiveEvents[touchend] = touchend;
-          additiveEvents[touchcancel] = touchcancel;
-          additiveEvents[pointerdown] = mousedown;
-          additiveEvents[pointermove] = mousemove;
-          additiveEvents[pointerup] = mouseup;
-          additiveEvents[pointercancel] = mouseup;
-        }
-      } else {
-        eventMap[pointerdown] = mousedown;
-        eventMap[pointermove] = mousemove;
-        eventMap[pointerup] = mouseup;
-        eventMap[pointercancel] = mouseup;
-        eventMap[touchstart] = mousedown;
-        eventMap[touchmove] = mousemove;
-        eventMap[touchend] = mouseup;
-        eventMap[touchcancel] = mouseup;
-      }
+  } else if (supports.MSPointerEvents) {
+    eventMap[pointerdown] = MSPointerDown;
+    eventMap[pointermove] = MSPointerMove;
+    eventMap[pointerup] = MSPointerUp;
+    eventMap[pointercancel] = MSPointerCancel;
+    eventMap[mousedown] = MSPointerDown;
+    eventMap[mousemove] = MSPointerMove;
+    eventMap[mouseup] = MSPointerUp;
+    eventMap[touchstart] = MSPointerDown;
+    eventMap[touchmove] = MSPointerMove;
+    eventMap[touchend] = MSPointerUp;
+    eventMap[touchcancel] = MSPointerCancel;
+    eventMap[mouseover] = 'MSPointerOver';
+    eventMap[mouseout] = 'MSPointerOut';
+  } else if (supports.TouchEvents) {
+    eventMap[pointerdown] = touchstart;
+    eventMap[pointermove] = touchmove;
+    eventMap[pointerup] = touchend;
+    eventMap[pointercancel] = touchcancel;
+    eventMap[mousedown] = touchstart;
+    eventMap[mousemove] = touchmove;
+    eventMap[mouseup] = touchend;
+    eventMap[click] = tap;
+    eventMap[dblclick] = doubletap;
+    if (Ext.os.is.Desktop) {
+      eventMap[touchstart] = mousedown;
+      eventMap[touchmove] = mousemove;
+      eventMap[touchend] = mouseup;
+      eventMap[touchcancel] = mouseup;
+      additiveEvents[mousedown] = mousedown;
+      additiveEvents[mousemove] = mousemove;
+      additiveEvents[mouseup] = mouseup;
+      additiveEvents[touchstart] = touchstart;
+      additiveEvents[touchmove] = touchmove;
+      additiveEvents[touchend] = touchend;
+      additiveEvents[touchcancel] = touchcancel;
+      additiveEvents[pointerdown] = mousedown;
+      additiveEvents[pointermove] = mousemove;
+      additiveEvents[pointerup] = mouseup;
+      additiveEvents[pointercancel] = mouseup;
     }
+  } else {
+    eventMap[pointerdown] = mousedown;
+    eventMap[pointermove] = mousemove;
+    eventMap[pointerup] = mouseup;
+    eventMap[pointercancel] = mouseup;
+    eventMap[touchstart] = mousedown;
+    eventMap[touchmove] = mousemove;
+    eventMap[touchend] = mouseup;
+    eventMap[touchcancel] = mouseup;
   }
   if (Ext.isWebKit) {
     eventMap.transitionend = Ext.browser.getVendorProperyName('transitionEnd');
@@ -19111,12 +19339,10 @@ Ext.define('Ext.dom.Element', function(Element) {
     var id = node && node.id, el = Ext.cache[id], parent;
     if (el) {
       el.destroy();
-    } else {
-      if (node && (node.nodeType === 3 || node.tagName.toUpperCase() !== 'BODY')) {
-        parent = node.parentNode;
-        if (parent) {
-          parent.removeChild(node);
-        }
+    } else if (node && (node.nodeType === 3 || node.tagName.toUpperCase() !== 'BODY')) {
+      parent = node.parentNode;
+      if (parent) {
+        parent.removeChild(node);
       }
     }
   }});
@@ -19126,7 +19352,7 @@ Ext.define('Ext.dom.Element', function(Element) {
   Ext.onInternalReady(function() {
     var bodyCls = [], theme;
     Ext.getDoc().on('selectstart', function(ev, dom) {
-      var selectableCls = Element.selectableCls, unselectableCls = Element.unselectableCls, tagName = dom && dom.tagName, el = new Ext.dom.Fly;
+      var selectableCls = Element.selectableCls, unselectableCls = Element.unselectableCls, tagName = dom && dom.tagName, el = new Ext.dom.Fly();
       tagName = tagName && tagName.toLowerCase();
       if (tagName === 'input' || tagName === 'textarea') {
         return;
@@ -19389,45 +19615,29 @@ Ext.JSON = new function() {
   }, doEncode = function(o, newline) {
     if (o === null || o === undefined) {
       return 'null';
-    } else {
-      if (Ext.isDate(o)) {
-        return me.encodeDate(o);
+    } else if (Ext.isDate(o)) {
+      return me.encodeDate(o);
+    } else if (Ext.isString(o)) {
+      if (Ext.isMSDate(o)) {
+        return me.encodeMSDate(o);
       } else {
-        if (Ext.isString(o)) {
-          if (Ext.isMSDate(o)) {
-            return me.encodeMSDate(o);
-          } else {
-            return me.encodeString(o);
-          }
-        } else {
-          if (typeof o === 'number') {
-            return isFinite(o) ? String(o) : 'null';
-          } else {
-            if (Ext.isBoolean(o)) {
-              return String(o);
-            } else {
-              if (typeof o.toJSON === 'function') {
-                return doEncode(o.toJSON());
-              } else {
-                if (Ext.isArray(o)) {
-                  return encodeArray(o, newline);
-                } else {
-                  if (Ext.isObject(o)) {
-                    return encodeObject(o, newline);
-                  } else {
-                    if (typeof o === 'function') {
-                      return 'null';
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
+        return me.encodeString(o);
       }
+    } else if (typeof o === 'number') {
+      return isFinite(o) ? String(o) : 'null';
+    } else if (Ext.isBoolean(o)) {
+      return String(o);
+    } else if (typeof o.toJSON === 'function') {
+      return doEncode(o.toJSON());
+    } else if (Ext.isArray(o)) {
+      return encodeArray(o, newline);
+    } else if (Ext.isObject(o)) {
+      return encodeObject(o, newline);
+    } else if (typeof o === 'function') {
+      return 'null';
     }
     return 'undefined';
-  }, m = {'\b':'\\b', '\t':'\\t', '\n':'\\n', '\f':'\\f', '\r':'\\r', '"':'\\"', '\\':'\\\\', '\x0B':'\\u000b'}, charToReplace = /[\\"\x00-\x1f\x7f-\uffff]/g, encodeString = function(s) {
+  }, m = {'\b':'\\b', '\t':'\\t', '\n':'\\n', '\f':'\\f', '\r':'\\r', '"':'\\"', '\\':'\\\\', '\v':'\\u000b'}, charToReplace = /[\\"\x00-\x1f\x7f-\uffff]/g, encodeString = function(s) {
     return '"' + s.replace(charToReplace, function(a) {
       var c = m[a];
       return typeof c === 'string' ? c : '\\u' + ('0000' + a.charCodeAt(0).toString(16)).slice(-4);
@@ -19512,7 +19722,7 @@ Ext.JSON = new function() {
   Ext.util.JSON = me;
   Ext.encode = me.encode;
   Ext.decode = me.decode;
-};
+}();
 Ext.define('Ext.mixin.Inheritable', {extend:Ext.Mixin, mixinConfig:{id:'inheritable'}, getInherited:function(inner) {
   var me = this, inheritedState = inner && me.inheritedStateInner || me.inheritedState, ownerCt = me.getRefOwner(), isContainer = me.isContainer, parent, inheritedStateInner, getInner, ownerLayout;
   if (!inheritedState || inheritedState.invalid) {
@@ -19546,40 +19756,26 @@ Ext.define('Ext.mixin.Inheritable', {extend:Ext.Mixin, mixinConfig:{id:'inherita
   var me = this, hasSkipThis = typeof skipThis === 'boolean', namedScope = Ext._namedScopes[defaultScope], ret;
   if (!namedScope) {
     ret = me.getInheritedConfig('defaultListenerScope', hasSkipThis ? skipThis : true) || defaultScope || me;
-  } else {
-    if (namedScope.isController) {
-      ret = me.getInheritedConfig('controller', hasSkipThis ? skipThis : !namedScope.isSelf);
-    } else {
-      if (namedScope.isOwner) {
-        ret = me.getRefOwner();
-      } else {
-        if (namedScope.isSelf) {
-          ret = me.getInheritedConfig('defaultListenerScope', hasSkipThis && skipThis) || me;
-        } else {
-          if (namedScope.isThis) {
-            ret = me;
-          }
-        }
-      }
-    }
+  } else if (namedScope.isController) {
+    ret = me.getInheritedConfig('controller', hasSkipThis ? skipThis : !namedScope.isSelf);
+  } else if (namedScope.isOwner) {
+    ret = me.getRefOwner();
+  } else if (namedScope.isSelf) {
+    ret = me.getInheritedConfig('defaultListenerScope', hasSkipThis && skipThis) || me;
+  } else if (namedScope.isThis) {
+    ret = me;
   }
   return ret || null;
 }, resolveSatelliteListenerScope:function(satellite, defaultScope) {
   var me = this, namedScope = Ext._namedScopes[defaultScope], ret;
   if (!namedScope) {
     ret = me.getInheritedConfig('defaultListenerScope') || defaultScope || me;
-  } else {
-    if (namedScope.isController) {
-      ret = me.getInheritedConfig('controller');
-    } else {
-      if (namedScope.isSelf) {
-        ret = me.getInheritedConfig('defaultListenerScope') || satellite;
-      } else {
-        if (namedScope.isThis) {
-          ret = satellite;
-        }
-      }
-    }
+  } else if (namedScope.isController) {
+    ret = me.getInheritedConfig('controller');
+  } else if (namedScope.isSelf) {
+    ret = me.getInheritedConfig('defaultListenerScope') || satellite;
+  } else if (namedScope.isThis) {
+    ret = satellite;
   }
   return ret || null;
 }, lookupNameHolder:function(skipThis) {
@@ -19654,10 +19850,8 @@ Ext.define('Ext.mixin.Bindable', {mixinId:'bindable', config:{bind:{$value:null,
   }
   if (defaultListenerScope) {
     inheritedState.defaultListenerScope = me;
-  } else {
-    if (controller) {
-      inheritedState.defaultListenerScope = controller;
-    }
+  } else if (controller) {
+    inheritedState.defaultListenerScope = controller;
   }
   if (viewModel) {
     if (!viewModel.isViewModel) {
@@ -19832,10 +20026,8 @@ Ext.define('Ext.mixin.Bindable', {mixinId:'bindable', config:{bind:{$value:null,
     if (viewModel) {
       if (viewModel.constructor === Object) {
         Ext.apply(config, viewModel);
-      } else {
-        if (typeof viewModel === 'string') {
-          config.type = viewModel;
-        }
+      } else if (typeof viewModel === 'string') {
+        config.type = viewModel;
       }
     }
     viewModel = Ext.Factory.viewModel(config);
@@ -19994,12 +20186,12 @@ Ext.define('Ext.mixin.ComponentDelegation', {extend:Ext.Mixin, mixinConfig:{id:'
   function HasListeners() {
   }
   T.prototype.HasListeners = T.HasListeners = HasListeners;
-  HasListeners.prototype = T.hasListeners = new Ext.mixin.ComponentDelegation.HasDelegatedListeners;
+  HasListeners.prototype = T.hasListeners = new Ext.mixin.ComponentDelegation.HasDelegatedListeners();
 }}, function(ComponentDelegation) {
   function HasDelegatedListeners() {
   }
   ComponentDelegation.HasDelegatedListeners = HasDelegatedListeners;
-  HasDelegatedListeners.prototype = ComponentDelegation.prototype.$hasDelegatedListeners = new Ext.mixin.Observable.HasListeners;
+  HasDelegatedListeners.prototype = ComponentDelegation.prototype.$hasDelegatedListeners = new Ext.mixin.Observable.HasListeners();
 });
 Ext.define('Ext.plugin.Abstract', {alternateClassName:'Ext.AbstractPlugin', mixins:[Ext.mixin.Identifiable], isPlugin:true, constructor:function(config) {
   if (config) {
@@ -20043,35 +20235,29 @@ Ext.define('Ext.plugin.Abstract', {alternateClassName:'Ext.AbstractPlugin', mixi
       obj = {};
       obj[typeProp] = plugins;
       plugins = [obj];
-    } else {
-      if (plugins.isInstance) {
+    } else if (plugins.isInstance) {
+      plugins = [plugins];
+    } else if (type === 'object') {
+      if (plugins[typeProp]) {
         plugins = [plugins];
       } else {
-        if (type === 'object') {
-          if (plugins[typeProp]) {
-            plugins = [plugins];
-          } else {
-            obj = include ? Ext.merge(Ext.clone(include), plugins) : plugins;
-            plugins = [];
-            for (key in obj) {
-              if (!(value = obj[key])) {
-                continue;
-              }
-              entry = {id:key};
-              entry[typeProp] = key;
-              Ext.apply(entry, value);
-              plugins.push(entry);
-            }
-            Ext.sortByWeight(plugins);
+        obj = include ? Ext.merge(Ext.clone(include), plugins) : plugins;
+        plugins = [];
+        for (key in obj) {
+          if (!(value = obj[key])) {
+            continue;
           }
-        } else {
-          if (type !== 'array') {
-            Ext.raise('Invalid value for "plugins" config ("' + type + '"');
-          } else {
-            plugins = plugins.slice();
-          }
+          entry = {id:key};
+          entry[typeProp] = key;
+          Ext.apply(entry, value);
+          plugins.push(entry);
         }
+        Ext.sortByWeight(plugins);
       }
+    } else if (type !== 'array') {
+      Ext.raise('Invalid value for "plugins" config ("' + type + '"');
+    } else {
+      plugins = plugins.slice();
     }
   }
   return plugins;
@@ -20118,12 +20304,10 @@ Ext.define('Ext.mixin.Pluggable', function(Pluggable) {
           if (p.destroy) {
             p.destroy();
           }
-        } else {
-          if (p.detachCmp) {
-            p.detachCmp();
-            if (p.setCmp) {
-              p.setCmp(null);
-            }
+        } else if (p.detachCmp) {
+          p.detachCmp();
+          if (p.setCmp) {
+            p.setCmp(null);
           }
         }
         break;
@@ -20310,10 +20494,8 @@ Ext.define('Ext.mixin.Keyboard', function(Keyboard) {
       } else {
         if (typeof mapping === 'string' || typeof mapping === 'function') {
           mapping = {handler:mapping, scope:defaultScope};
-        } else {
-          if (mapping) {
-            mapping = Ext.apply({handler:mapping.fn, scope:defaultScope}, mapping);
-          }
+        } else if (mapping) {
+          mapping = Ext.apply({handler:mapping.fn, scope:defaultScope}, mapping);
         }
         existingKeyMap = existingKeyMap || {};
       }
@@ -20365,10 +20547,8 @@ Ext.define('Ext.mixin.Keyboard', function(Keyboard) {
       if (entry.keyCode !== e.keyCode || !entry.ignoreModifiers && !entry.shiftKey !== !ev.shiftKey) {
         return false;
       }
-    } else {
-      if (e.getCharCode() !== code) {
-        return false;
-      }
+    } else if (e.getCharCode() !== code) {
+      return false;
     }
     return entry.ignoreModifiers || !entry.ctrlKey === !ev.ctrlKey && !entry.altKey === !ev.altKey && !entry.metaKey === !ev.metaKey && !entry.shiftKey === !ev.shiftKey;
   }, parseEntry:function(key, entry) {
@@ -20473,12 +20653,10 @@ Ext.define('Ext.mixin.Focusable', {mixinId:'focusable', $isFocusableEntity:true,
           focusElDom.select();
         }
       }
+    } else if (focusTarget.focus) {
+      focusTarget.focus();
     } else {
-      if (focusTarget.focus) {
-        focusTarget.focus();
-      } else {
-        return false;
-      }
+      return false;
     }
   } else {
     focusTarget = me.findFocusTarget();
@@ -20538,15 +20716,13 @@ Ext.define('Ext.mixin.Focusable', {mixinId:'focusable', $isFocusableEntity:true,
   if (el) {
     if (el.$isFocusableEntity) {
       index = el.getTabIndex();
-    } else {
-      if (el.isElement && el.dom) {
-        index = el.dom.getAttribute('tabIndex');
-        if (index !== null) {
-          index -= 0;
-        }
-      } else {
-        return;
+    } else if (el.isElement && el.dom) {
+      index = el.dom.getAttribute('tabIndex');
+      if (index !== null) {
+        index -= 0;
       }
+    } else {
+      return;
     }
   }
   if (typeof index !== 'number') {
@@ -20568,10 +20744,8 @@ Ext.define('Ext.mixin.Focusable', {mixinId:'focusable', $isFocusableEntity:true,
   if (el) {
     if (el.$isFocusableEntity) {
       el.setTabIndex(newTabIndex);
-    } else {
-      if (el.isElement && el.dom) {
-        el.setTabIndex(newTabIndex);
-      }
+    } else if (el.isElement && el.dom) {
+      el.setTabIndex(newTabIndex);
     }
   }
 }, onFocusEnter:function(e) {
@@ -20613,21 +20787,17 @@ Ext.define('Ext.mixin.Focusable', {mixinId:'focusable', $isFocusableEntity:true,
       if (!focusTarget.destroyed && focusTarget.isFocusable()) {
         focusTarget.focus();
       }
-    } else {
-      if (Ext.getDoc().contains(focusTarget) && Ext.fly(focusTarget).isFocusable()) {
-        fromComponent = Ext.Component.from(focusTarget);
-        if (fromComponent) {
-          fromComponent.revertFocusTo(focusTarget);
-        } else {
-          focusTarget.focus();
-        }
+    } else if (Ext.getDoc().contains(focusTarget) && Ext.fly(focusTarget).isFocusable()) {
+      fromComponent = Ext.Component.from(focusTarget);
+      if (fromComponent) {
+        fromComponent.revertFocusTo(focusTarget);
       } else {
-        if (focusEvent.fromComponent && focusEvent.fromComponent.focus) {
-          reverted = focusEvent.fromComponent.focus();
-          if (!reverted) {
-            activeElement.blur();
-          }
-        }
+        focusTarget.focus();
+      }
+    } else if (focusEvent.fromComponent && focusEvent.fromComponent.focus) {
+      reverted = focusEvent.fromComponent.focus();
+      if (!reverted) {
+        activeElement.blur();
       }
     }
   }
@@ -20764,10 +20934,8 @@ Ext.define('Ext.mixin.Focusable', {mixinId:'focusable', $isFocusableEntity:true,
   if (focusEl) {
     if (focusEl.$isFocusableEntity) {
       focusEl.disableTabbing();
-    } else {
-      if (focusEl.isElement && el && !el.contains(focusEl)) {
-        focusEl.saveTabbableState();
-      }
+    } else if (focusEl.isElement && el && !el.contains(focusEl)) {
+      focusEl.saveTabbableState();
     }
   }
 }, enableTabbing:function(reset) {
@@ -20779,10 +20947,8 @@ Ext.define('Ext.mixin.Focusable', {mixinId:'focusable', $isFocusableEntity:true,
   if (focusEl) {
     if (focusEl.$isFocusableEntity) {
       focusEl.enableTabbing();
-    } else {
-      if (focusEl.isElement && el && !el.contains(focusEl)) {
-        focusEl.restoreTabbableState();
-      }
+    } else if (focusEl.isElement && el && !el.contains(focusEl)) {
+      focusEl.restoreTabbableState();
     }
   }
   if (el) {
@@ -21131,10 +21297,8 @@ border:null, touchAction:null, eventHandlers:{focus:'handleFocusEvent', blur:'ha
   var result = false, cmp;
   if (element.isEvent) {
     element = element.target;
-  } else {
-    if (element.isElement) {
-      element = element.dom;
-    }
+  } else if (element.isElement) {
+    element = element.dom;
   }
   cmp = Ext.Component.from(element);
   if (cmp) {
@@ -21207,10 +21371,8 @@ border:null, touchAction:null, eventHandlers:{focus:'handleFocusEvent', blur:'ha
         container.beforeFocusableChildShow(me);
       }
     }
-  } else {
-    if (hidden) {
-      me.revertFocus();
-    }
+  } else if (hidden) {
+    me.revertFocus();
   }
   if (element && !element.destroyed) {
     if (hidden) {
@@ -21432,11 +21594,9 @@ border:null, touchAction:null, eventHandlers:{focus:'handleFocusEvent', blur:'ha
     }
     me.mon(me[elementName], listeners);
     return;
-  } else {
-    if (delegate) {
-      me.mixins.componentDelegation.addDelegatedListener.call(me, name, fn, scope, options, order, caller, manager);
-      return;
-    }
+  } else if (delegate) {
+    me.mixins.componentDelegation.addDelegatedListener.call(me, name, fn, scope, options, order, caller, manager);
+    return;
   }
   me.callParent([name, fn, scope, options, order, caller, manager]);
 }, doRemoveListener:function(eventName, fn, scope) {
@@ -22274,10 +22434,8 @@ Ext.define('Ext.overrides.Widget', {override:'Ext.Widget', mixins:[Ext.mixin.Tra
   var result = false, cmp;
   if (element.isEvent) {
     element = element.target;
-  } else {
-    if (element.isElement) {
-      element = element.dom;
-    }
+  } else if (element.isElement) {
+    element = element.dom;
   }
   cmp = Ext.Component.from(element);
   if (cmp) {
@@ -22330,14 +22488,12 @@ Ext.define('Ext.overrides.Widget', {override:'Ext.Widget', mixins:[Ext.mixin.Tra
         constrainAlign = parent.getRenderTarget ? parent.getRenderTarget() : parent.bodyElement || parent.element;
         isViewport = parent.isViewport;
       }
-    } else {
-      if (!constrainAlign) {
-        if (isFloated) {
-          isViewport = true;
-          constrainAlign = Ext.getBody();
-        } else {
-          constrainAlign = me.element.parent();
-        }
+    } else if (!constrainAlign) {
+      if (isFloated) {
+        isViewport = true;
+        constrainAlign = Ext.getBody();
+      } else {
+        constrainAlign = me.element.parent();
       }
     }
     if (!constrainAlign.isRegion) {
@@ -22445,10 +22601,8 @@ Ext.define('Ext.overrides.Widget', {override:'Ext.Widget', mixins:[Ext.mixin.Tra
     if (!oldShim) {
       me.on('resize', 'syncShim', me);
     }
-  } else {
-    if (oldShim) {
-      me.un('resize', 'syncShim', me);
-    }
+  } else if (oldShim) {
+    me.un('resize', 'syncShim', me);
   }
 }, hideModalMask:function() {
   var me = this, floatRoot = Ext.getFloatRoot(), floatParentNode = me.floatParentNode, data, mask;
@@ -22543,20 +22697,18 @@ Ext.define('Ext.overrides.Widget', {override:'Ext.Widget', mixins:[Ext.mixin.Tra
     } else {
       parentEl.dom.insertBefore(positionEl, refNode);
     }
-  } else {
-    if (positionEl.previousSibling) {
-      for (i = len - 2; i >= startIdx; i--) {
-        if (!Ext.fly(nodes[i]).is('.' + me.shimCls) && nodes[i] !== positionEl) {
-          currentAlwaysOnTop = Ext.get(nodes[i]).getData().alwaysOnTop;
-          if (alwaysOnTop < currentAlwaysOnTop) {
-            refNode = nodes[i];
-            parentEl.dom.insertBefore(refNode, null);
-            if (nodes[i - 1] && Ext.fly(nodes[i - 1]).hasCls(maskCls)) {
-              parentEl.dom.insertBefore(nodes[i - 1], refNode);
-              i -= 1;
-            }
-            alwaysOnTop = currentAlwaysOnTop;
+  } else if (positionEl.previousSibling) {
+    for (i = len - 2; i >= startIdx; i--) {
+      if (!Ext.fly(nodes[i]).is('.' + me.shimCls) && nodes[i] !== positionEl) {
+        currentAlwaysOnTop = Ext.get(nodes[i]).getData().alwaysOnTop;
+        if (alwaysOnTop < currentAlwaysOnTop) {
+          refNode = nodes[i];
+          parentEl.dom.insertBefore(refNode, null);
+          if (nodes[i - 1] && Ext.fly(nodes[i - 1]).hasCls(maskCls)) {
+            parentEl.dom.insertBefore(nodes[i - 1], refNode);
+            i -= 1;
           }
+          alwaysOnTop = currentAlwaysOnTop;
         }
       }
     }
@@ -22677,7 +22829,7 @@ Ext.define('Ext.util.Bag', {isBag:true, constructor:function() {
   }
   return ret;
 }, clone:function() {
-  var me = this, ret = new me.self, len = me.length;
+  var me = this, ret = new me.self(), len = me.length;
   if (len) {
     Ext.apply(ret.map, me.map);
     ret.items = me.items.slice();
@@ -22828,7 +22980,7 @@ Ext.define('Ext.state.Provider', function(Provider) {
       }
     }
   }}, bufferableMethods:{saveState:50}, constructor:function(config) {
-    this.queue = new Ext.util.Bag;
+    this.queue = new Ext.util.Bag();
     this.state = {};
     this.initConfig(config);
   }, clear:function() {
@@ -22876,7 +23028,7 @@ Ext.define('Ext.state.Provider', function(Provider) {
     this.saveState();
   }}};
 }, function(Provider) {
-  Provider.register(new Provider);
+  Provider.register(new Provider());
 });
 Ext.define('Ext.state.Stateful', function(Stateful) {
   return {extend:Ext.Mixin, mixinConfig:{id:'state', configs:true, before:{destroy:'_flushStateful'}, mixed:function(targetClass) {
@@ -22915,17 +23067,13 @@ Ext.define('Ext.state.Stateful', function(Stateful) {
       if (stateful === true) {
         ret = {};
         defaults = true;
+      } else if (typeof stateful === 'string') {
+        ret = {};
+        ret[stateful] = true;
+      } else if (Ext.isObject(stateful)) {
+        ret = stateful;
       } else {
-        if (typeof stateful === 'string') {
-          ret = {};
-          ret[stateful] = true;
-        } else {
-          if (Ext.isObject(stateful)) {
-            ret = stateful;
-          } else {
-            ret = Ext.Array.toMap(stateful);
-          }
-        }
+        ret = Ext.Array.toMap(stateful);
       }
       defaults = defaults && me.getStatefulDefaults();
       if (defaults) {
@@ -22944,11 +23092,9 @@ Ext.define('Ext.state.Stateful', function(Stateful) {
         }
       }
       ret = Ext.Object.isEmpty(was) ? false : was;
-    } else {
-      if (was) {
-        for (name in was) {
-          watcher.un(name, handler, me);
-        }
+    } else if (was) {
+      for (name in was) {
+        watcher.un(name, handler, me);
       }
     }
     return ret;
@@ -22963,7 +23109,7 @@ Ext.define('Ext.state.Stateful', function(Stateful) {
     var me = this, id = me._getStateId(), ret = cache && me.$state || null, provider = id && Ext.state.Provider.get(), n, owner, statefulOwner;
     if (provider && !ret) {
       if (!(statefulOwner = me.getStatefulOwner())) {
-        ret = new Ext.state.Builder;
+        ret = new Ext.state.Builder();
         if (cache) {
           ret.data = provider.get(id);
         }
@@ -23157,16 +23303,12 @@ Ext.define('Ext.util.Format', function() {
         } else {
           out = size + ' bytes';
         }
+      } else if (size < kbLimit) {
+        out = Math.round(size * 10 / byteLimit) / 10 + ' KB';
+      } else if (size < mbLimit) {
+        out = Math.round(size * 10 / kbLimit) / 10 + ' MB';
       } else {
-        if (size < kbLimit) {
-          out = Math.round(size * 10 / byteLimit) / 10 + ' KB';
-        } else {
-          if (size < mbLimit) {
-            out = Math.round(size * 10 / kbLimit) / 10 + ' MB';
-          } else {
-            out = Math.round(size * 10 / mbLimit) / 10 + ' GB';
-          }
-        }
+        out = Math.round(size * 10 / mbLimit) / 10 + ' GB';
       }
       return out;
     };
@@ -23183,10 +23325,8 @@ Ext.define('Ext.util.Format', function() {
     if (typeof precision === 'number') {
       precision = Math.pow(10, precision);
       result = Math.round(value * precision) / precision;
-    } else {
-      if (precision === undefined) {
-        result = Math.round(result);
-      }
+    } else if (precision === undefined) {
+      result = Math.round(result);
     }
     return result;
   }, number:function(v, formatString) {
@@ -23215,14 +23355,12 @@ Ext.define('Ext.util.Format', function() {
       extraChars = formatString.replace(me.formatPattern, '');
       if (splitFormat.length > 2) {
         Ext.raise({sourceClass:'Ext.util.Format', sourceMethod:'number', value:v, formatString:formatString, msg:'Invalid number format, should have no more than 1 decimal'});
-      } else {
-        if (splitFormat.length === 2) {
-          precision = splitFormat[1].length;
-          trimTrailingZeroes = splitFormat[1].match(me.hashRe);
-          if (trimTrailingZeroes) {
-            len = trimTrailingZeroes[0].length;
-            trimPart = 'trailingZeroes\x3dnew RegExp(Ext.String.escapeRegex(utilFormat.decimalSeparator) + "*0{0,' + len + '}$")';
-          }
+      } else if (splitFormat.length === 2) {
+        precision = splitFormat[1].length;
+        trimTrailingZeroes = splitFormat[1].match(me.hashRe);
+        if (trimTrailingZeroes) {
+          len = trimTrailingZeroes[0].length;
+          trimPart = 'trailingZeroes\x3dnew RegExp(Ext.String.escapeRegex(utilFormat.decimalSeparator) + "*0{0,' + len + '}$")';
         }
       }
       code = ['var utilFormat\x3dExt.util.Format,extNumber\x3dExt.Number,neg,absVal,fnum,parts' + (hasComma ? ',thousandSeparator,thousands\x3d[],j,n,i' : '') + (extraChars ? ',formatString\x3d"' + formatString + '",formatPattern\x3d/[\\d,\\.#]+/' : '') + ',trailingZeroes;' + 'return function(v){' + 'if(typeof v!\x3d\x3d"number"\x26\x26isNaN(v\x3dextNumber.from(v,NaN)))return"";' + 'neg\x3dv\x3c0;', 'absVal\x3dMath.abs(v);', 'fnum\x3dExt.Number.toFixed(absVal, ' + precision + ');', trimPart, ';'];
@@ -23236,10 +23374,8 @@ Ext.define('Ext.util.Format', function() {
         if (precision) {
           code[code.length] = 'fnum +\x3d utilFormat.decimalSeparator+parts[1];';
         }
-      } else {
-        if (precision) {
-          code[code.length] = 'if(utilFormat.decimalSeparator!\x3d\x3d"."){' + 'parts\x3dfnum.split(".");' + 'fnum\x3dparts[0]+utilFormat.decimalSeparator+parts[1];' + '}';
-        }
+      } else if (precision) {
+        code[code.length] = 'if(utilFormat.decimalSeparator!\x3d\x3d"."){' + 'parts\x3dfnum.split(".");' + 'fnum\x3dparts[0]+utilFormat.decimalSeparator+parts[1];' + '}';
       }
       code[code.length] = 'if(neg\x26\x26fnum!\x3d\x3d"' + (precision ? '0.' + Ext.String.repeat('0', precision) : '0') + '") { fnum\x3d"-"+fnum; }';
       if (trimTrailingZeroes) {
@@ -23287,15 +23423,11 @@ Ext.define('Ext.util.Format', function() {
     var parts = box.split(' '), ln = parts.length;
     if (ln === 1) {
       parts[1] = parts[2] = parts[3] = parts[0];
-    } else {
-      if (ln === 2) {
-        parts[2] = parts[0];
-        parts[3] = parts[1];
-      } else {
-        if (ln === 3) {
-          parts[3] = parts[1];
-        }
-      }
+    } else if (ln === 2) {
+      parts[2] = parts[0];
+      parts[3] = parts[1];
+    } else if (ln === 3) {
+      parts[3] = parts[1];
     }
     return {top:parseInt(parts[0], 10) || 0, right:parseInt(parts[1], 10) || 0, bottom:parseInt(parts[2], 10) || 0, left:parseInt(parts[3], 10) || 0};
   }, resource:function(url, prefix) {
@@ -23357,12 +23489,10 @@ Ext.define('Ext.Template', {inheritableStatics:{from:function(el, config) {
       }
       if (formatFn.substr(0, 5) === 'this.') {
         return tpl[formatFn.substr(5)].apply(tpl, args);
+      } else if (fm[formatFn]) {
+        return fm[formatFn].apply(fm, args);
       } else {
-        if (fm[formatFn]) {
-          return fm[formatFn].apply(fm, args);
-        } else {
-          return match;
-        }
+        return match;
       }
     } else {
       return values[name] !== undefined ? values[name] : '';
@@ -23401,21 +23531,17 @@ Ext.define('Ext.Template', {inheritableStatics:{from:function(el, config) {
 }, regexReplaceFn:function(match, index, name, formatFn, args) {
   if (index == null || index === '') {
     index = '"' + name + '"';
-  } else {
-    if (this.stringFormat) {
-      index = parseInt(index) + 1;
-    }
+  } else if (this.stringFormat) {
+    index = parseInt(index) + 1;
   }
   if (formatFn && this.disableFormats !== true) {
     args = args ? ',' + args : '';
     if (formatFn.substr(0, 5) === 'this.') {
       formatFn = formatFn + '(';
+    } else if (Ext.util.Format[formatFn]) {
+      formatFn = 'fm.' + formatFn + '(';
     } else {
-      if (Ext.util.Format[formatFn]) {
-        formatFn = 'fm.' + formatFn + '(';
-      } else {
-        return match;
-      }
+      return match;
     }
     return "'," + formatFn + 'v[' + index + ']' + args + "),'";
   } else {
@@ -23482,102 +23608,76 @@ Ext.define('Ext.util.XTemplateParser', {constructor:function(config) {
       end = str.indexOf('%}', begin + 2);
       me.doEval(str.substring(begin + 2, end));
       end += 2;
-    } else {
-      if (m[2]) {
-        end = str.indexOf(']}', begin + 2);
-        me.doExpr(str.substring(begin + 2, end));
-        end += 2;
-      } else {
-        if (m[3]) {
-          me.doTag(m[3]);
-        } else {
-          if (m[4]) {
-            actions = null;
-            while ((subMatch = actionsRe.exec(m[4])) !== null) {
-              s = subMatch[2] || subMatch[3];
-              if (s) {
-                s = Ext.String.htmlDecode(s);
-                t = subMatch[1];
-                t = aliases[t] || t;
-                actions = actions || {};
-                prev = actions[t];
-                if (typeof prev === 'string') {
-                  actions[t] = [prev, s];
-                } else {
-                  if (prev) {
-                    actions[t].push(s);
-                  } else {
-                    actions[t] = s;
-                  }
-                }
-              }
-            }
-            if (!actions) {
-              if (me.elseRe.test(m[4])) {
-                me.doElse();
-              } else {
-                if (me.defaultRe.test(m[4])) {
-                  me.doDefault();
-                } else {
-                  me.doTpl();
-                  stack.push({type:'tpl'});
-                }
-              }
-            } else {
-              if (actions['if']) {
-                me.doIf(actions['if'], actions);
-                stack.push({type:'if'});
-              } else {
-                if (actions['switch']) {
-                  me.doSwitch(actions['switch'], actions);
-                  stack.push({type:'switch'});
-                  expectTplNext = true;
-                } else {
-                  if (actions['case']) {
-                    me.doCase(actions['case'], actions);
-                  } else {
-                    if (actions['elif']) {
-                      me.doElseIf(actions['elif'], actions);
-                    } else {
-                      if (actions['for']) {
-                        ++me.level;
-                        if (prop = me.propRe.exec(m[4])) {
-                          actions.propName = prop[1] || prop[2];
-                        }
-                        me.doFor(actions['for'], actions);
-                        stack.push({type:'for', actions:actions});
-                      } else {
-                        if (actions['foreach']) {
-                          ++me.level;
-                          if (prop = me.propRe.exec(m[4])) {
-                            actions.propName = prop[1] || prop[2];
-                          }
-                          me.doForEach(actions['foreach'], actions);
-                          stack.push({type:'foreach', actions:actions});
-                        } else {
-                          if (actions.exec) {
-                            me.doExec(actions.exec, actions);
-                            stack.push({type:'exec', actions:actions});
-                          }
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
+    } else if (m[2]) {
+      end = str.indexOf(']}', begin + 2);
+      me.doExpr(str.substring(begin + 2, end));
+      end += 2;
+    } else if (m[3]) {
+      me.doTag(m[3]);
+    } else if (m[4]) {
+      actions = null;
+      while ((subMatch = actionsRe.exec(m[4])) !== null) {
+        s = subMatch[2] || subMatch[3];
+        if (s) {
+          s = Ext.String.htmlDecode(s);
+          t = subMatch[1];
+          t = aliases[t] || t;
+          actions = actions || {};
+          prev = actions[t];
+          if (typeof prev === 'string') {
+            actions[t] = [prev, s];
+          } else if (prev) {
+            actions[t].push(s);
           } else {
-            if (m[0].length === 5) {
-              stack.push({type:'tpl'});
-            } else {
-              frame = stack.pop();
-              me.doEnd(frame.type, frame.actions);
-              if (frame.type === 'for' || frame.type === 'foreach') {
-                --me.level;
-              }
-            }
+            actions[t] = s;
           }
         }
+      }
+      if (!actions) {
+        if (me.elseRe.test(m[4])) {
+          me.doElse();
+        } else if (me.defaultRe.test(m[4])) {
+          me.doDefault();
+        } else {
+          me.doTpl();
+          stack.push({type:'tpl'});
+        }
+      } else if (actions['if']) {
+        me.doIf(actions['if'], actions);
+        stack.push({type:'if'});
+      } else if (actions['switch']) {
+        me.doSwitch(actions['switch'], actions);
+        stack.push({type:'switch'});
+        expectTplNext = true;
+      } else if (actions['case']) {
+        me.doCase(actions['case'], actions);
+      } else if (actions['elif']) {
+        me.doElseIf(actions['elif'], actions);
+      } else if (actions['for']) {
+        ++me.level;
+        if (prop = me.propRe.exec(m[4])) {
+          actions.propName = prop[1] || prop[2];
+        }
+        me.doFor(actions['for'], actions);
+        stack.push({type:'for', actions:actions});
+      } else if (actions['foreach']) {
+        ++me.level;
+        if (prop = me.propRe.exec(m[4])) {
+          actions.propName = prop[1] || prop[2];
+        }
+        me.doForEach(actions['foreach'], actions);
+        stack.push({type:'foreach', actions:actions});
+      } else if (actions.exec) {
+        me.doExec(actions.exec, actions);
+        stack.push({type:'exec', actions:actions});
+      }
+    } else if (m[0].length === 5) {
+      stack.push({type:'tpl'});
+    } else {
+      frame = stack.pop();
+      me.doEnd(frame.type, frame.actions);
+      if (frame.type === 'for' || frame.type === 'foreach') {
+        --me.level;
       }
     }
   }
@@ -23636,12 +23736,10 @@ Ext.define('Ext.util.XTemplateCompiler', {extend:Ext.util.XTemplateParser, useEv
   var me = this;
   if (action === '.') {
     me.body.push('if (values) {\n');
+  } else if (me.propNameRe.test(action)) {
+    me.body.push('if (', me.parseTag(action), ') {\n');
   } else {
-    if (me.propNameRe.test(action)) {
-      me.body.push('if (', me.parseTag(action), ') {\n');
-    } else {
-      me.body.push('if (', me.addFn(action), me.callFn, ') {\n');
-    }
+    me.body.push('if (', me.addFn(action), me.callFn, ') {\n');
   }
   if (actions.exec) {
     me.doExec(actions.exec);
@@ -23650,12 +23748,10 @@ Ext.define('Ext.util.XTemplateCompiler', {extend:Ext.util.XTemplateParser, useEv
   var me = this;
   if (action === '.') {
     me.body.push('else if (values) {\n');
+  } else if (me.propNameRe.test(action)) {
+    me.body.push('} else if (', me.parseTag(action), ') {\n');
   } else {
-    if (me.propNameRe.test(action)) {
-      me.body.push('} else if (', me.parseTag(action), ') {\n');
-    } else {
-      me.body.push('} else if (', me.addFn(action), me.callFn, ') {\n');
-    }
+    me.body.push('} else if (', me.addFn(action), me.callFn, ') {\n');
   }
   if (actions.exec) {
     me.doExec(actions.exec);
@@ -23665,12 +23761,10 @@ Ext.define('Ext.util.XTemplateCompiler', {extend:Ext.util.XTemplateParser, useEv
   if (action === '.' || action === '#') {
     key = action === '.' ? 'values' : 'xindex';
     me.body.push('switch (', key, ') {\n');
+  } else if (me.propNameRe.test(action)) {
+    me.body.push('switch (', me.parseTag(action), ') {\n');
   } else {
-    if (me.propNameRe.test(action)) {
-      me.body.push('switch (', me.parseTag(action), ') {\n');
-    } else {
-      me.body.push('switch (', me.addFn(action), me.callFn, ') {\n');
-    }
+    me.body.push('switch (', me.addFn(action), me.callFn, ') {\n');
   }
   me.switches.push(0);
 }, doCase:function(action) {
@@ -23701,21 +23795,17 @@ Ext.define('Ext.util.XTemplateCompiler', {extend:Ext.util.XTemplateParser, useEv
     }
     me.body.push('}\n');
     me.body.push('parent\x3dp', L, ';values\x3dr', L + 1, ';xcount\x3dn' + L + ';xindex\x3di', L, '+1;xkey\x3dk', L, ';\n');
-  } else {
-    if (type === 'if' || type === 'switch') {
-      me.body.push('}\n');
-    }
+  } else if (type === 'if' || type === 'switch') {
+    me.body.push('}\n');
   }
 }, doFor:function(action, actions) {
   var me = this, s, L = me.level, up = L - 1, parentAssignment;
   if (action === '.') {
     s = 'values';
+  } else if (me.propNameRe.test(action)) {
+    s = me.parseTag(action);
   } else {
-    if (me.propNameRe.test(action)) {
-      s = me.parseTag(action);
-    } else {
-      s = me.addFn(action) + me.callFn;
-    }
+    s = me.addFn(action) + me.callFn;
   }
   if (me.maxLevel < L) {
     me.maxLevel = L;
@@ -23739,12 +23829,10 @@ Ext.define('Ext.util.XTemplateCompiler', {extend:Ext.util.XTemplateParser, useEv
   var me = this, L = me.level, up = L - 1, s, parentAssignment;
   if (action === '.') {
     s = 'values';
+  } else if (me.propNameRe.test(action)) {
+    s = me.parseTag(action);
   } else {
-    if (me.propNameRe.test(action)) {
-      s = me.parseTag(action);
-    } else {
-      s = me.addFn(action) + me.callFn;
-    }
+    s = me.addFn(action) + me.callFn;
   }
   if (me.maxLevel < L) {
     me.maxLevel = L;
@@ -23774,12 +23862,10 @@ Ext.define('Ext.util.XTemplateCompiler', {extend:Ext.util.XTemplateParser, useEv
   var me = this, name = 'f' + me.definitions.length, guards = me.guards[me.strict ? 0 : 1];
   if (body === '.') {
     me.definitions.push('function ' + name + '(' + me.fnArgs + ') {', ' return values', '}');
+  } else if (body === '..') {
+    me.definitions.push('function ' + name + '(' + me.fnArgs + ') {', ' return parent', '}');
   } else {
-    if (body === '..') {
-      me.definitions.push('function ' + name + '(' + me.fnArgs + ') {', ' return parent', '}');
-    } else {
-      me.definitions.push('function ' + name + '(' + me.fnArgs + ') {', guards.doTry, ' var $v \x3d values; with($v) {', '  return(' + body + ')', ' }', guards.doCatch, '}');
-    }
+    me.definitions.push('function ' + name + '(' + me.fnArgs + ') {', guards.doTry, ' var $v \x3d values; with($v) {', '  return(' + body + ')', ' }', guards.doCatch, '}');
   }
   return name;
 }, parseTag:function(tag) {
@@ -23797,24 +23883,16 @@ Ext.define('Ext.util.XTemplateCompiler', {extend:Ext.util.XTemplateParser, useEv
       me.validTypes = true;
     }
     v = 'validTypes[typeof values] || ts.call(values) \x3d\x3d\x3d "[object Date]" ? values : ""';
+  } else if (name === '#') {
+    v = 'xindex';
+  } else if (name === '$') {
+    v = 'xkey';
+  } else if (name.substr(0, 7) === 'parent.') {
+    v = name;
+  } else if (isNaN(name) && name.indexOf('-') === -1 && name.indexOf('.') !== -1) {
+    v = 'values.' + name;
   } else {
-    if (name === '#') {
-      v = 'xindex';
-    } else {
-      if (name === '$') {
-        v = 'xkey';
-      } else {
-        if (name.substr(0, 7) === 'parent.') {
-          v = name;
-        } else {
-          if (isNaN(name) && name.indexOf('-') === -1 && name.indexOf('.') !== -1) {
-            v = 'values.' + name;
-          } else {
-            v = "values['" + name + "']";
-          }
-        }
-      }
-    }
+    v = "values['" + name + "']";
   }
   if (math) {
     v = '(' + v + math + ')';
@@ -23867,10 +23945,8 @@ Ext.define('Ext.XTemplate', {extend:Ext.Template, isXTemplate:true, emptyObj:{},
     if (source && defaultTpl) {
       ret = this.getTpl(source, defaultTpl);
     }
-  } else {
-    if ((config || config === '') && !config.isTemplate) {
-      ret = new this(config);
-    }
+  } else if ((config || config === '') && !config.isTemplate) {
+    ret = new this(config);
   }
   return ret;
 }, getTpl:function(instance, name) {
@@ -24022,12 +24098,10 @@ Ext.define('Ext.scroll.Scroller', {extend:Ext.Evented, alias:'scroller.scroller'
       animate = deltaY;
       deltaY = deltaX[1];
       deltaX = deltaX[0];
-    } else {
-      if (typeof deltaX !== 'number') {
-        animate = deltaY;
-        deltaY = deltaX.y;
-        deltaX = deltaX.x;
-      }
+    } else if (typeof deltaX !== 'number') {
+      animate = deltaY;
+      deltaY = deltaX.y;
+      deltaX = deltaX.x;
     }
   }
   deltaX = typeof deltaX === 'number' ? deltaX + position.x : null;
@@ -24042,12 +24116,10 @@ Ext.define('Ext.scroll.Scroller', {extend:Ext.Evented, alias:'scroller.scroller'
       animation = y;
       y = x[1];
       x = x[0];
-    } else {
-      if (typeof x !== 'number') {
-        animation = y;
-        y = x.y;
-        x = x.x;
-      }
+    } else if (typeof x !== 'number') {
+      animation = y;
+      y = x.y;
+      x = x.x;
     }
   }
   if (x < 0 || y < 0) {
@@ -24091,35 +24163,25 @@ Ext.define('Ext.scroll.Scroller', {extend:Ext.Evented, alias:'scroller.scroller'
     y = me.getY();
     if (x && y) {
       direction = y === 'scroll' && x === 'scroll' ? 'both' : 'auto';
-    } else {
-      if (y) {
-        direction = 'vertical';
-      } else {
-        if (x) {
-          direction = 'horizontal';
-        }
-      }
+    } else if (y) {
+      direction = 'vertical';
+    } else if (x) {
+      direction = 'horizontal';
     }
     me._direction = direction;
   } else {
     if (direction === 'auto') {
       x = true;
       y = true;
-    } else {
-      if (direction === 'vertical') {
-        x = false;
-        y = true;
-      } else {
-        if (direction === 'horizontal') {
-          x = true;
-          y = false;
-        } else {
-          if (direction === 'both') {
-            x = 'scroll';
-            y = 'scroll';
-          }
-        }
-      }
+    } else if (direction === 'vertical') {
+      x = false;
+      y = true;
+    } else if (direction === 'horizontal') {
+      x = true;
+      y = false;
+    } else if (direction === 'both') {
+      x = 'scroll';
+      y = 'scroll';
     }
     me.setX(x);
     me.setY(y);
@@ -24128,25 +24190,19 @@ Ext.define('Ext.scroll.Scroller', {extend:Ext.Evented, alias:'scroller.scroller'
   var num = 'number', configuredSize = this.configuredSize, x, y;
   if (size == null || typeof size === num) {
     x = y = size;
-  } else {
-    if (size) {
-      x = size.x;
-      y = size.y;
-    }
+  } else if (size) {
+    x = size.x;
+    y = size.y;
   }
   if (typeof x === num) {
     configuredSize.x = true;
-  } else {
-    if (x === null) {
-      configuredSize.x = false;
-    }
+  } else if (x === null) {
+    configuredSize.x = false;
   }
   if (typeof y === num) {
     configuredSize.y = true;
-  } else {
-    if (y === null) {
-      configuredSize.y = false;
-    }
+  } else if (y === null) {
+    configuredSize.y = false;
   }
   if (x === undefined) {
     x = oldSize ? oldSize.x : null;
@@ -24231,14 +24287,12 @@ Ext.define('Ext.scroll.Scroller', {extend:Ext.Evented, alias:'scroller.scroller'
   if (align) {
     if (Ext.isString(align)) {
       align = {x:options.x === false ? null : align, y:options.y === false ? null : align};
-    } else {
-      if (Ext.isObject(align)) {
-        if (align.x && options.x === false) {
-          align.x = null;
-        }
-        if (align.y && options.y === false) {
-          align.y = null;
-        }
+    } else if (Ext.isObject(align)) {
+      if (align.x && options.x === false) {
+        align.x = null;
+      }
+      if (align.y && options.y === false) {
+        align.y = null;
       }
     }
   }
@@ -24284,11 +24338,9 @@ Ext.define('Ext.scroll.Scroller', {extend:Ext.Evented, alias:'scroller.scroller'
       }
     }
     me.isScrolling = Ext.isScrolling = true;
-  } else {
-    if (me.isScrolling) {
-      me.cancelOnScrollEnd();
-      me.doOnScrollEnd();
-    }
+  } else if (me.isScrolling) {
+    me.cancelOnScrollEnd();
+    me.doOnScrollEnd();
   }
   me.isPrimary = isPrimary;
 }, suspendPartnerSync:function() {
@@ -24990,10 +25042,8 @@ hideAnimation:null, tplWriteMode:'overwrite', data:null, contentEl:null, record:
 }, applyData:function(data) {
   if (Ext.isObject(data)) {
     return Ext.apply({}, data);
-  } else {
-    if (!data) {
-      data = {};
-    }
+  } else if (!data) {
+    data = {};
   }
   return data;
 }, updateData:function(newData) {
@@ -25033,13 +25083,11 @@ hideAnimation:null, tplWriteMode:'overwrite', data:null, contentEl:null, record:
     } else {
       existing.destroy();
     }
-  } else {
-    if (draggable) {
-      draggable = this.createDraggable(draggable);
-      draggable = new Ext.drag.Source(draggable);
-      if (this.initDragConstraints) {
-        draggable.on('initdragconstraints', 'initDragConstraints', this);
-      }
+  } else if (draggable) {
+    draggable = this.createDraggable(draggable);
+    draggable = new Ext.drag.Source(draggable);
+    if (this.initDragConstraints) {
+      draggable.on('initdragconstraints', 'initDragConstraints', this);
     }
   }
   return draggable;
@@ -25126,12 +25174,10 @@ hideAnimation:null, tplWriteMode:'overwrite', data:null, contentEl:null, record:
     if (tooltip.isInstance) {
       tooltip.setTarget(this);
       return tooltip;
+    } else if (typeof tooltip === 'string') {
+      tooltip = {html:tooltip};
     } else {
-      if (typeof tooltip === 'string') {
-        tooltip = {html:tooltip};
-      } else {
-        tooltip = Ext.merge({}, tooltip);
-      }
+      tooltip = Ext.merge({}, tooltip);
     }
     if (tooltip.autoCreate || tooltip.autoHide === false) {
       delete tooltip.autoCreate;
@@ -25264,11 +25310,9 @@ hideAnimation:null, tplWriteMode:'overwrite', data:null, contentEl:null, record:
       if (!me.hasListeners.painted) {
         el.on('painted', 'handleElementPainted', me);
       }
-    } else {
-      if (name === 'resize' && !me.isViewport) {
-        if (!me.hasListeners.resize) {
-          el.on({scope:me, resize:'handleElementResize', priority:1000});
-        }
+    } else if (name === 'resize' && !me.isViewport) {
+      if (!me.hasListeners.resize) {
+        el.on({scope:me, resize:'handleElementResize', priority:1000});
       }
     }
   }
@@ -25280,11 +25324,9 @@ hideAnimation:null, tplWriteMode:'overwrite', data:null, contentEl:null, record:
       if (!me.hasListeners.painted) {
         el.un('painted', 'handleElementPainted', me);
       }
-    } else {
-      if (name === 'resize' && !me.isViewport) {
-        if (!me.hasListeners.resize) {
-          el.un('resize', 'handleElementResize', me);
-        }
+    } else if (name === 'resize' && !me.isViewport) {
+      if (!me.hasListeners.resize) {
+        el.un('resize', 'handleElementResize', me);
       }
     }
   }
@@ -25746,10 +25788,8 @@ DIRECTION_DOWN:'down', DIRECTION_BOTTOM:'bottom', DIRECTION_LEFT:'left', DIRECTI
   stateInstance = Ext.factory(state, Ext.fx.State, states[name]);
   if (stateInstance) {
     states[name] = stateInstance;
-  } else {
-    if (name === this.STATE_TO) {
-      Ext.Logger.error("Setting and invalid '100%' / 'to' state of: " + state);
-    }
+  } else if (name === this.STATE_TO) {
+    Ext.Logger.error("Setting and invalid '100%' / 'to' state of: " + state);
   }
   return this;
 }, getState:function(name) {
@@ -25932,10 +25972,8 @@ Ext.define('Ext.fx.Animation', {constructor:function(config) {
   if (typeof config === 'string') {
     type = config;
     config = {};
-  } else {
-    if (config && config.type) {
-      type = config.type;
-    }
+  } else if (config && config.type) {
+    type = config.type;
   }
   if (type) {
     defaultClass = Ext.ClassManager.getByAlias('animation.' + type);
@@ -26011,10 +26049,8 @@ Ext.define('Ext.app.EventDomain', {statics:{instances:{}}, isEventDomain:true, i
             Ext.raise('Cannot resolve "' + listener + '" on controller.');
           }
           scope = null;
-        } else {
-          if (typeof listener === 'string') {
-            listener = scope[listener];
-          }
+        } else if (typeof listener === 'string') {
+          listener = scope[listener];
         }
         event.addListener(listener, scope, options);
         for (i = 0; i < monitoredClassesCount; ++i) {
@@ -26135,7 +26171,7 @@ Ext.define('Ext.route.Handler', {lazy:false, statics:{fromRouteConfig:function(c
 }});
 Ext.define('Ext.route.Action', {config:{actions:null, befores:null, urlParams:[]}, started:false, stopped:false, constructor:function(config) {
   var me = this;
-  me.deferred = new Ext.Deferred;
+  me.deferred = new Ext.Deferred();
   me.resume = me.resume.bind(me);
   me.stop = me.stop.bind(me);
   me.initConfig(config);
@@ -26180,14 +26216,12 @@ Ext.define('Ext.route.Action', {config:{actions:null, befores:null, urlParams:[]
           me.stop(arg);
         });
       }
+    } else if (actions && actions.length) {
+      config = actions.shift();
+      Ext.callback(config.fn, config.scope, args);
+      me.next();
     } else {
-      if (actions && actions.length) {
-        config = actions.shift();
-        Ext.callback(config.fn, config.scope, args);
-        me.next();
-      } else {
-        me.next();
-      }
+      me.next();
     }
   }
   return me;
@@ -26353,12 +26387,10 @@ Ext.define('Ext.route.Route', {config:{name:null, url:null, allowInactive:false,
     value = values[i];
     if (conditions[key]) {
       type = conditions[key];
-    } else {
-      if (key[0] === ':') {
-        key = key.substr(1);
-        if (conditions[key]) {
-          type = conditions[key];
-        }
+    } else if (key[0] === ':') {
+      key = key.substr(1);
+      if (conditions[key]) {
+        type = conditions[key];
       }
     }
     value = this.parseValue(value, type);
@@ -26493,12 +26525,10 @@ Ext.define('Ext.route.Route', {config:{name:null, url:null, allowInactive:false,
       param = paramsInMatchString[i];
       if (conditions[param]) {
         matcher = conditions[param];
+      } else if (param[0] === ':' && conditions[param.substr(1)]) {
+        matcher = conditions[param.substr(1)];
       } else {
-        if (param[0] === ':' && conditions[param.substr(1)]) {
-          matcher = conditions[param.substr(1)];
-        } else {
-          matcher = defaultMatcher;
-        }
+        matcher = defaultMatcher;
       }
       if (Ext.isObject(matcher)) {
         matcher = matcher.re;
@@ -26522,10 +26552,8 @@ Ext.define('Ext.route.Route', {config:{name:null, url:null, allowInactive:false,
       if (item !== handler) {
         newHandlers.push(item);
       }
-    } else {
-      if (item.scope !== scope) {
-        newHandlers.push(item);
-      }
+    } else if (item.scope !== scope) {
+      newHandlers.push(item);
     }
   }
   this.setHandlers(newHandlers);
@@ -26663,7 +26691,7 @@ Ext.define('Ext.route.Router', {singleton:true, config:{hashbang:null, multipleT
     me.handleBefore(tokens);
   }
 }, handleBefore:function(tokens) {
-  var me = this, action = new Ext.route.Action;
+  var me = this, action = new Ext.route.Action();
   if (Ext.fireEvent('beforeroutes', action, tokens) === false) {
     action.destroy();
   } else {
@@ -26693,10 +26721,8 @@ Ext.define('Ext.route.Router', {singleton:true, config:{hashbang:null, multipleT
         if (!matched[name]) {
           matched[name] = 1;
         }
-      } else {
-        if (!matched[name]) {
-          unmatched.push(route);
-        }
+      } else if (!matched[name]) {
+        unmatched.push(route);
       }
     }
     if (!found) {
@@ -26829,65 +26855,55 @@ Ext.define('Ext.route.Mixin', {extend:Ext.Mixin, mixinConfig:{id:'routerable', b
   var currentHash = Ext.util.History.getToken(), Router = Ext.route.Router, delimiter = Router.getMultipleToken(), tokens = currentHash ? currentHash.split(delimiter) : [], length = tokens.length, force, i, name, obj, route, token, match;
   if (hash === -1) {
     return Ext.util.History.back();
-  } else {
-    if (hash === 1) {
-      return Ext.util.History.forward();
-    } else {
-      if (hash.isModel) {
-        hash = hash.toUrl();
-      } else {
-        if (Ext.isObject(hash)) {
-          for (name in hash) {
-            obj = hash[name];
-            if (!Ext.isObject(obj)) {
-              obj = {token:obj};
-            }
-            if (length) {
-              route = Router.getByName(name);
-              if (route) {
-                match = false;
-                for (i = 0; i < length; i++) {
-                  token = tokens[i];
-                  if (route.matcherRegex.test(token)) {
-                    match = true;
-                    if (obj.token) {
-                      if (obj.fn && obj.fn.call(this, token, tokens, obj) === false) {
-                        continue;
-                      }
-                      tokens[i] = obj.token;
-                      if (obj.force) {
-                        route.lastToken = null;
-                      }
-                    } else {
-                      tokens.splice(i, 1);
-                      i--;
-                      length--;
-                      route.lastToken = null;
-                    }
-                  }
+  } else if (hash === 1) {
+    return Ext.util.History.forward();
+  } else if (hash.isModel) {
+    hash = hash.toUrl();
+  } else if (Ext.isObject(hash)) {
+    for (name in hash) {
+      obj = hash[name];
+      if (!Ext.isObject(obj)) {
+        obj = {token:obj};
+      }
+      if (length) {
+        route = Router.getByName(name);
+        if (route) {
+          match = false;
+          for (i = 0; i < length; i++) {
+            token = tokens[i];
+            if (route.matcherRegex.test(token)) {
+              match = true;
+              if (obj.token) {
+                if (obj.fn && obj.fn.call(this, token, tokens, obj) === false) {
+                  continue;
                 }
-                if (obj && obj.token && !match) {
-                  tokens.push(obj.token);
+                tokens[i] = obj.token;
+                if (obj.force) {
+                  route.lastToken = null;
                 }
-              }
-            } else {
-              if (obj && obj.token) {
-                tokens.push(obj.token);
+              } else {
+                tokens.splice(i, 1);
+                i--;
+                length--;
+                route.lastToken = null;
               }
             }
           }
-          hash = tokens.join(delimiter);
+          if (obj && obj.token && !match) {
+            tokens.push(obj.token);
+          }
         }
+      } else if (obj && obj.token) {
+        tokens.push(obj.token);
       }
     }
+    hash = tokens.join(delimiter);
   }
   if (opt === true) {
     force = opt;
     opt = null;
-  } else {
-    if (opt) {
-      force = opt.force;
-    }
+  } else if (opt) {
+    force = opt.force;
   }
   length = tokens.length;
   if (force && length) {
@@ -27160,10 +27176,8 @@ Ext.define('Ext.util.Filter', {extend:Ext.util.BasicFilter, config:{property:nul
   var me = this, convert = me._convert, result = me.getPropertyValue(candidate);
   if (convert) {
     result = convert.call(me.scope || me, result);
-  } else {
-    if (!preventCoerce) {
-      result = Ext.coerce(result, v);
-    }
+  } else if (!preventCoerce) {
+    result = Ext.coerce(result, v);
   }
   return result;
 }}}, function(Filter) {
@@ -27642,10 +27656,8 @@ Ext.define('Ext.util.AbstractMixedCollection', {mixins:{observable:Ext.util.Obse
   var filters = [];
   if (Ext.isString(property)) {
     filters.push(new Ext.util.Filter({property:property, value:value, anyMatch:anyMatch, caseSensitive:caseSensitive}));
-  } else {
-    if (Ext.isArray(property) || property instanceof Ext.util.Filter) {
-      filters = filters.concat(property);
-    }
+  } else if (Ext.isArray(property) || property instanceof Ext.util.Filter) {
+    filters = filters.concat(property);
   }
   return this.filterBy(Ext.util.Filter.createFilterFn(filters));
 }, filterBy:function(fn, scope) {
@@ -27787,26 +27799,20 @@ Ext.define('Ext.util.Sortable', {isSortable:true, $configPrefixed:false, $config
   if (Ext.isArray(sorters)) {
     doSort = insertionPosition;
     insertionPosition = direction;
-  } else {
-    if (Ext.isObject(sorters)) {
-      sorters = [sorters];
-      doSort = insertionPosition;
-      insertionPosition = direction;
+  } else if (Ext.isObject(sorters)) {
+    sorters = [sorters];
+    doSort = insertionPosition;
+    insertionPosition = direction;
+  } else if (Ext.isString(sorters)) {
+    sorter = currentSorters.get(sorters);
+    if (!sorter) {
+      sorter = {property:sorters, direction:direction};
+    } else if (direction == null) {
+      sorter.toggle();
     } else {
-      if (Ext.isString(sorters)) {
-        sorter = currentSorters.get(sorters);
-        if (!sorter) {
-          sorter = {property:sorters, direction:direction};
-        } else {
-          if (direction == null) {
-            sorter.toggle();
-          } else {
-            sorter.setDirection(direction);
-          }
-        }
-        sorters = [sorter];
-      }
+      sorter.setDirection(direction);
     }
+    sorters = [sorter];
   }
   if (sorters && sorters.length) {
     sorters = me.decodeSorters(sorters);
@@ -27944,10 +27950,8 @@ Ext.define('Ext.util.MixedCollection', {extend:Ext.util.AbstractMixedCollection,
     comparison = sorterFn(newItem, items[middle]);
     if (comparison >= 0) {
       start = middle + 1;
-    } else {
-      if (comparison < 0) {
-        end = middle - 1;
-      }
+    } else if (comparison < 0) {
+      end = middle - 1;
     }
   }
   return start;
@@ -28010,13 +28014,11 @@ Ext.define('Ext.util.CollectionKey', {mixins:[Ext.mixin.Identifiable], isCollect
           map[oldKey] = bucket[1 - index];
         }
       }
-    } else {
-      if (bucket) {
-        if (me.getUnique() && bucket !== item) {
-          Ext.raise('Incorrect oldKey "' + oldKey + '" for item with newKey "' + me.getKey(item) + '"');
-        }
-        delete map[oldKey];
+    } else if (bucket) {
+      if (me.getUnique() && bucket !== item) {
+        Ext.raise('Incorrect oldKey "' + oldKey + '" for item with newKey "' + me.getKey(item) + '"');
       }
+      delete map[oldKey];
     }
     me.add([item]);
   }
@@ -28351,17 +28353,13 @@ constructor:function(config) {
   } else {
     if (Ext.isString(property)) {
       filters = [new Ext.util.Filter({property:property, value:value, root:root, anyMatch:anyMatch, caseSensitive:caseSensitive, exactMatch:exactMatch})];
-    } else {
-      if (property instanceof Ext.util.Filter) {
-        filters = [property];
-        property.setRoot(root);
-      } else {
-        if (Ext.isArray(property)) {
-          filters = property.slice(0);
-          for (i = 0, length = filters.length; i < length; ++i) {
-            filters[i].setRoot(root);
-          }
-        }
+    } else if (property instanceof Ext.util.Filter) {
+      filters = [property];
+      property.setRoot(root);
+    } else if (Ext.isArray(property)) {
+      filters = property.slice(0);
+      for (i = 0, length = filters.length; i < length; ++i) {
+        filters[i].setRoot(root);
       }
     }
     fn = Ext.util.Filter.createFilterFn(filters);
@@ -28514,25 +28512,21 @@ constructor:function(config) {
         toAdd = [item];
         newIndex = me.length;
       }
-    } else {
-      if (sorted && !itemFiltered) {
-        if (!filtered) {
-          index = me.indexOfKey(keyChanged ? oldKey : newKey);
+    } else if (sorted && !itemFiltered) {
+      if (!filtered) {
+        index = me.indexOfKey(keyChanged ? oldKey : newKey);
+      }
+      sortFn = me.getSortFn();
+      if (index !== -1) {
+        if (index && sortFn(items[index - 1], items[index]) > 0) {
+          itemMovement = -1;
+          newIndex = Ext.Array.binarySearch(items, item, 0, index, sortFn);
+        } else if (index < last && sortFn(items[index], items[index + 1]) > 0) {
+          itemMovement = 1;
+          newIndex = Ext.Array.binarySearch(items, item, index + 1, sortFn);
         }
-        sortFn = me.getSortFn();
-        if (index !== -1) {
-          if (index && sortFn(items[index - 1], items[index]) > 0) {
-            itemMovement = -1;
-            newIndex = Ext.Array.binarySearch(items, item, 0, index, sortFn);
-          } else {
-            if (index < last && sortFn(items[index], items[index + 1]) > 0) {
-              itemMovement = 1;
-              newIndex = Ext.Array.binarySearch(items, item, index + 1, sortFn);
-            }
-          }
-          if (itemMovement) {
-            toAdd = [item];
-          }
+        if (itemMovement) {
+          toAdd = [item];
         }
       }
     }
@@ -28554,10 +28548,8 @@ constructor:function(config) {
     }
     if (itemMovement > 0) {
       details.newIndex--;
-    } else {
-      if (itemMovement < 0) {
-        details.oldIndex++;
-      }
+    } else if (itemMovement < 0) {
+      details.oldIndex++;
     }
     me.notify(itemFiltered ? 'filtereditemchange' : 'itemchange', [details]);
     me.endUpdate();
@@ -28767,26 +28759,24 @@ constructor:function(config) {
   var me = this, map = me.map, indices = me.indices, source = me.getSource(), newKey;
   if (source && !source.updating) {
     source.updateKey(item, oldKey);
-  } else {
-    if ((newKey = me.getKey(item)) !== oldKey) {
-      if (map[oldKey] === item && !(newKey in map)) {
-        delete map[oldKey];
-        me.updating++;
-        me.generation++;
-        map[newKey] = item;
-        if (indices) {
-          indices[newKey] = indices[oldKey];
-          delete indices[oldKey];
-        }
-        me.notify('updatekey', [Ext.apply({item:item, newKey:newKey, oldKey:oldKey}, details)]);
-        me.updating--;
-      } else {
-        if (newKey in map && map[newKey] !== item) {
-          Ext.raise('Duplicate newKey "' + newKey + '" for item with oldKey "' + oldKey + '"');
-        }
-        if (oldKey in map && map[oldKey] !== item) {
-          Ext.raise('Incorrect oldKey "' + oldKey + '" for item with newKey "' + newKey + '"');
-        }
+  } else if ((newKey = me.getKey(item)) !== oldKey) {
+    if (map[oldKey] === item && !(newKey in map)) {
+      delete map[oldKey];
+      me.updating++;
+      me.generation++;
+      map[newKey] = item;
+      if (indices) {
+        indices[newKey] = indices[oldKey];
+        delete indices[oldKey];
+      }
+      me.notify('updatekey', [Ext.apply({item:item, newKey:newKey, oldKey:oldKey}, details)]);
+      me.updating--;
+    } else {
+      if (newKey in map && map[newKey] !== item) {
+        Ext.raise('Duplicate newKey "' + newKey + '" for item with oldKey "' + oldKey + '"');
+      }
+      if (oldKey in map && map[oldKey] !== item) {
+        Ext.raise('Incorrect oldKey "' + oldKey + '" for item with newKey "' + newKey + '"');
       }
     }
   }
@@ -28812,10 +28802,8 @@ constructor:function(config) {
       if (atItem) {
         ++index;
       }
-    } else {
-      if (!me.sorted) {
-        index = me.findInsertIndex(items[0], details.at ? me.length : 0);
-      }
+    } else if (!me.sorted) {
+      index = me.findInsertIndex(items[0], details.at ? me.length : 0);
     }
   }
   if (me.getAutoFilter() && me.filtered) {
@@ -28829,10 +28817,8 @@ constructor:function(config) {
           filtered = [];
         }
         filtered.push(item);
-      } else {
-        if (copy) {
-          copy.push(item);
-        }
+      } else if (copy) {
+        copy.push(item);
       }
     }
   }
@@ -29391,7 +29377,7 @@ Ext.define('Ext.data.Range', {isDataRange:true, begin:0, buffer:0, end:0, length
   me.refresh();
   if ('begin' in config) {
     me.begin = me.end = 0;
-    me['goto'](config.begin, config.end)['catch'](function() {
+    me["goto"](config.begin, config.end)["catch"](function() {
     });
   }
 }, destroy:function() {
@@ -29434,9 +29420,9 @@ Ext.define('Ext.data.Range', {isDataRange:true, begin:0, buffer:0, end:0, length
 }, resolveWaitIfSatisfied:function() {
   this.resolveWait(this);
 }, setupWait:function(begin, end) {
-  var me = this, timeout = me.waitTimeout, deferred = new Ext.Deferred, promise = deferred.promise;
+  var me = this, timeout = me.waitTimeout, deferred = new Ext.Deferred(), promise = deferred.promise;
   if (timeout) {
-    promise = Ext.Deferred.timeout(promise, timeout)['catch'](function() {
+    promise = Ext.Deferred.timeout(promise, timeout)["catch"](function() {
       return me.resolveWait(null);
     });
   }
@@ -29462,60 +29448,54 @@ Ext.define('Ext.util.ObjectTemplate', {isObjectTemplate:true, excludeProperties:
       fn = function() {
         return template;
       };
-    } else {
-      if (me.valueRe.test(template)) {
-        template = template.substring(1, template.length - 1).split('.');
-        fn = function(context) {
-          var v, i;
-          for (v = context, i = 0; v && i < template.length; ++i) {
-            v = v[template[i]];
-          }
-          return v;
-        };
-      } else {
-        template = new Ext.XTemplate(template);
-        fn = function(context) {
-          return template.apply(context);
-        };
-      }
-    }
-  } else {
-    if (!template || Ext.isPrimitive(template) || Ext.isFunction(template)) {
-      fn = function() {
-        return template;
+    } else if (me.valueRe.test(template)) {
+      template = template.substring(1, template.length - 1).split('.');
+      fn = function(context) {
+        var v, i;
+        for (v = context, i = 0; v && i < template.length; ++i) {
+          v = v[template[i]];
+        }
+        return v;
       };
     } else {
-      if (template instanceof Array) {
-        compiled = [];
-        for (i = 0, len = template.length; i < len; ++i) {
-          compiled[i] = me.compile(template[i]);
-        }
-        fn = function(context) {
-          var ret = [], i;
-          for (i = 0; i < len; ++i) {
-            ret[i] = compiled[i](context);
-          }
-          return ret;
-        };
-      } else {
-        compiled = {};
-        for (i in template) {
-          if (!exclude[i]) {
-            compiled[i] = me.compile(template[i]);
-          }
-        }
-        fn = function(context) {
-          var ret = {}, i, v;
-          for (i in template) {
-            v = exclude[i] ? template[i] : compiled[i](context);
-            if (v !== undefined) {
-              ret[i] = v;
-            }
-          }
-          return ret;
-        };
+      template = new Ext.XTemplate(template);
+      fn = function(context) {
+        return template.apply(context);
+      };
+    }
+  } else if (!template || Ext.isPrimitive(template) || Ext.isFunction(template)) {
+    fn = function() {
+      return template;
+    };
+  } else if (template instanceof Array) {
+    compiled = [];
+    for (i = 0, len = template.length; i < len; ++i) {
+      compiled[i] = me.compile(template[i]);
+    }
+    fn = function(context) {
+      var ret = [], i;
+      for (i = 0; i < len; ++i) {
+        ret[i] = compiled[i](context);
+      }
+      return ret;
+    };
+  } else {
+    compiled = {};
+    for (i in template) {
+      if (!exclude[i]) {
+        compiled[i] = me.compile(template[i]);
       }
     }
+    fn = function(context) {
+      var ret = {}, i, v;
+      for (i in template) {
+        v = exclude[i] ? template[i] : compiled[i](context);
+        if (v !== undefined) {
+          ret[i] = v;
+        }
+      }
+      return ret;
+    };
   }
   return fn;
 }}});
@@ -29546,11 +29526,9 @@ Ext.define('Ext.data.schema.Role', {isRole:true, left:true, owner:false, side:'l
   var me = this, association = me.association, foreignKeyName = association.getFieldName(), isMany = association.isManyToMany, storeConfig = me.storeConfig, id = from.getId(), config = {asynchronousLoad:false, model:me.cls, role:me, session:session, associatedEntity:from, disableMetaChangeEvent:true, pageSize:null, remoteFilter:true, trackRemoved:!session}, store;
   if (isMany) {
     config.filters = [{id:me.$roleFilterId, property:me.inverse.field, value:id, exactMatch:true}];
-  } else {
-    if (foreignKeyName) {
-      config.filters = [{id:me.$roleFilterId, property:foreignKeyName, value:id, exactMatch:true}];
-      config.foreignKeyName = foreignKeyName;
-    }
+  } else if (foreignKeyName) {
+    config.filters = [{id:me.$roleFilterId, property:foreignKeyName, value:id, exactMatch:true}];
+    config.foreignKeyName = foreignKeyName;
   }
   if (storeConfig) {
     Ext.apply(config, storeConfig);
@@ -29631,10 +29609,8 @@ Ext.define('Ext.data.schema.Role', {isRole:true, left:true, owner:false, side:'l
     if (!isLoading) {
       store.load();
     }
-  } else {
-    if (hadStore && records && !isLoading) {
-      store.loadData(records);
-    }
+  } else if (hadStore && records && !isLoading) {
+    store.loadData(records);
   }
   return store;
 }, getAssociatedItem:function(rec) {
@@ -29667,7 +29643,7 @@ Ext.define('Ext.data.schema.Role', {isRole:true, left:true, owner:false, side:'l
     proxy = Model.getProxy();
     if (proxy) {
       proxyReader = proxy.getReader();
-      reader = new proxyReader.self;
+      reader = new proxyReader.self();
       reader.copyFrom(proxyReader);
       reader.setRootProperty(root);
     } else {
@@ -29692,11 +29668,9 @@ Ext.define('Ext.data.schema.Role', {isRole:true, left:true, owner:false, side:'l
 }, getCallbackOptions:function(options, scope, defaultScope) {
   if (typeof options === 'function') {
     options = {callback:options, scope:scope || defaultScope};
-  } else {
-    if (options) {
-      options = Ext.apply({}, options);
-      options.scope = scope || options.scope || defaultScope;
-    }
+  } else if (options) {
+    options = Ext.apply({}, options);
+    options.scope = scope || options.scope || defaultScope;
   }
   return options;
 }, doGetFK:function(leftRecord, options, scope) {
@@ -29711,26 +29685,22 @@ Ext.define('Ext.data.schema.Role', {isRole:true, left:true, owner:false, side:'l
         done = true;
         leftRecord[instanceName] = rightRecord = null;
       }
-    } else {
-      if (foreignKey) {
-        foreignKeyId = leftRecord.get(foreignKey);
-        if (!foreignKeyId && foreignKeyId !== 0) {
-          done = true;
-          leftRecord[instanceName] = rightRecord = null;
-        } else {
-          if (!rightRecord) {
-            rightRecord = cls.createWithId(foreignKeyId);
-          }
-        }
-      } else {
+    } else if (foreignKey) {
+      foreignKeyId = leftRecord.get(foreignKey);
+      if (!foreignKeyId && foreignKeyId !== 0) {
         done = true;
-        rightRecord = null;
+        leftRecord[instanceName] = rightRecord = null;
+      } else {
+        if (!rightRecord) {
+          rightRecord = cls.createWithId(foreignKeyId);
+        }
       }
+    } else {
+      done = true;
+      rightRecord = null;
     }
-  } else {
-    if (rightRecord) {
-      done = !rightRecord.isLoading();
-    }
+  } else if (rightRecord) {
+    done = !rightRecord.isLoading();
   }
   if (done) {
     if (options) {
@@ -29884,10 +29854,8 @@ Ext.define('Ext.data.schema.OneToOne', {extend:Ext.data.schema.Association, isOn
   me.doSetFK(leftRecord, newValue);
   if (!hasNewValue) {
     leftRecord[instanceName] = null;
-  } else {
-    if (session && cls) {
-      leftRecord[instanceName] = session.peekRecord(cls, newValue) || undefined;
-    }
+  } else if (session && cls) {
+    leftRecord[instanceName] = session.peekRecord(cls, newValue) || undefined;
   }
   if (me.inverse.owner && rightRecord) {
     me.association.schema.queueKeyCheck(rightRecord, me);
@@ -29944,13 +29912,11 @@ Ext.define('Ext.data.schema.ManyToOne', {extend:Ext.data.schema.Association, isM
     }
     store.destroy();
     rightRecord[me.getStoreName()] = null;
-  } else {
-    if (session) {
-      leftRecords = session.getRefs(rightRecord, me);
-      if (leftRecords) {
-        for (id in leftRecords) {
-          leftRecords[id].drop();
-        }
+  } else if (session) {
+    leftRecords = session.getRefs(rightRecord, me);
+    if (leftRecords) {
+      for (id in leftRecords) {
+        leftRecords[id].drop();
       }
     }
   }
@@ -29999,12 +29965,10 @@ Ext.define('Ext.data.schema.ManyToOne', {extend:Ext.data.schema.Association, isM
         id = leftRecord.id;
         if (refs && refs[id]) {
           ret.push(leftRecord);
-        } else {
-          if (allowInfer && leftRecord.data[fieldName] === undefined) {
-            ret.push(leftRecord);
-            leftRecord.data[fieldName] = rightRecord.id;
-            session.updateReference(leftRecord, field, rightRecord.id, undefined);
-          }
+        } else if (allowInfer && leftRecord.data[fieldName] === undefined) {
+          ret.push(leftRecord);
+          leftRecord.data[fieldName] = rightRecord.id;
+          session.updateReference(leftRecord, field, rightRecord.id, undefined);
         }
         seen[id] = true;
       }
@@ -30319,13 +30283,11 @@ Ext.define('Ext.data.schema.ManyToMany', {extend:Ext.data.schema.Association, is
       if (index >= 0) {
         store.remove([index]);
       }
-    } else {
-      if (index < 0) {
-        entry = store.getSession().getEntry(this.type, id);
-        leftRecord = entry && entry.record;
-        if (leftRecord) {
-          store.add(leftRecord);
-        }
+    } else if (index < 0) {
+      entry = store.getSession().getEntry(this.type, id);
+      leftRecord = entry && entry.record;
+      if (leftRecord) {
+        store.add(leftRecord);
       }
     }
     store.matrixUpdate = 0;
@@ -30512,19 +30474,17 @@ Ext.define('Ext.data.schema.Schema', {mixins:[Ext.mixin.Factoryable], alias:'sch
   if (!(instance = cache[id])) {
     cache[id] = instance = Schema.create(config);
     instance.id = id;
-  } else {
-    if (config && !isString) {
-      if (id !== 'default') {
-        Ext.raise('Only the default Schema instance can be reconfigured');
-      }
-      newConfig = Ext.merge({}, instance.config);
-      Ext.merge(newConfig, config);
-      instance.setConfig(newConfig);
-      instance.config = newConfig;
-      instance.setConfig = function() {
-        Ext.raise('The schema can only be reconfigured once');
-      };
+  } else if (config && !isString) {
+    if (id !== 'default') {
+      Ext.raise('Only the default Schema instance can be reconfigured');
     }
+    newConfig = Ext.merge({}, instance.config);
+    Ext.merge(newConfig, config);
+    instance.setConfig(newConfig);
+    instance.config = newConfig;
+    instance.setConfig = function() {
+      Ext.raise('The schema can only be reconfigured once');
+    };
   }
   return instance;
 }, lookupEntity:function(entity) {
@@ -30532,31 +30492,27 @@ Ext.define('Ext.data.schema.Schema', {mixins:[Ext.mixin.Factoryable], alias:'sch
   if (entity) {
     if (entity.isEntity) {
       ret = entity.self;
-    } else {
-      if (Ext.isFunction(entity)) {
-        ret = entity;
-      } else {
-        if (Ext.isString(entity)) {
-          ret = Ext.ClassManager.get(entity);
-          if (ret && (!ret.prototype || !ret.prototype.isEntity)) {
-            ret = null;
-          }
-          if (!ret) {
-            for (name in instances) {
-              schema = instances[name];
-              match = schema.getEntity(entity);
-              if (match) {
-                if (ret) {
-                  Ext.raise('Ambiguous entity name "' + entity + '". Defined by schema "' + ret.schema.type + '" and "' + name + '"');
-                }
-                ret = match;
-              }
+    } else if (Ext.isFunction(entity)) {
+      ret = entity;
+    } else if (Ext.isString(entity)) {
+      ret = Ext.ClassManager.get(entity);
+      if (ret && (!ret.prototype || !ret.prototype.isEntity)) {
+        ret = null;
+      }
+      if (!ret) {
+        for (name in instances) {
+          schema = instances[name];
+          match = schema.getEntity(entity);
+          if (match) {
+            if (ret) {
+              Ext.raise('Ambiguous entity name "' + entity + '". Defined by schema "' + ret.schema.type + '" and "' + name + '"');
             }
-          }
-          if (!ret) {
-            Ext.raise('No such Entity "' + entity + '".');
+            ret = match;
           }
         }
+      }
+      if (!ret) {
+        Ext.raise('No such Entity "' + entity + '".');
       }
     }
   }
@@ -30705,16 +30661,14 @@ Ext.define('Ext.data.schema.Schema', {mixins:[Ext.mixin.Factoryable], alias:'sch
   var me = this, entities = me.entities, entityName = entityType.entityName, entry = entities[entityName], fields = entityType.fields, associations, field, i, length, name;
   if (!entry) {
     entities[entityName] = entry = {name:entityName, associations:{}};
+  } else if (entry.cls) {
+    Ext.raise('Duplicate entity name "' + entityName + '": ' + entry.cls.$className + ' and ' + entityType.$className);
   } else {
-    if (entry.cls) {
-      Ext.raise('Duplicate entity name "' + entityName + '": ' + entry.cls.$className + ' and ' + entityType.$className);
-    } else {
-      associations = entry.associations;
-      for (name in associations) {
-        associations[name].inverse.cls = entityType;
-        me.associationEntityMap[entityName] = true;
-        me.decorateModel(associations[name].association);
-      }
+    associations = entry.associations;
+    for (name in associations) {
+      associations[name].inverse.cls = entityType;
+      me.associationEntityMap[entityName] = true;
+      me.decorateModel(associations[name].association);
     }
   }
   entry.cls = entityType;
@@ -30731,15 +30685,13 @@ Ext.define('Ext.data.schema.Schema', {mixins:[Ext.mixin.Factoryable], alias:'sch
   var me = this, i, length, matrixName;
   if (Ext.isString(matrices)) {
     me.addMatrixDescr(entityType, null, matrices);
+  } else if (matrices[0]) {
+    for (i = 0, length = matrices.length; i < length; ++i) {
+      me.addMatrixDescr(entityType, null, matrices[i]);
+    }
   } else {
-    if (matrices[0]) {
-      for (i = 0, length = matrices.length; i < length; ++i) {
-        me.addMatrixDescr(entityType, null, matrices[i]);
-      }
-    } else {
-      for (matrixName in matrices) {
-        me.addMatrixDescr(entityType, matrixName, matrices[matrixName]);
-      }
+    for (matrixName in matrices) {
+      me.addMatrixDescr(entityType, matrixName, matrices[matrixName]);
     }
   }
 }, addMatrixDescr:function(entityType, matrixName, matrixDef) {
@@ -30748,19 +30700,15 @@ Ext.define('Ext.data.schema.Schema', {mixins:[Ext.mixin.Factoryable], alias:'sch
     if (matrixDef.charAt(0) === '#') {
       left = {type:entityName};
       right = {type:matrixDef.substring(1)};
+    } else if (matrixDef.charAt(last = matrixDef.length - 1) === '#') {
+      left = {type:matrixDef.substring(0, last)};
+      right = {type:entityName};
+    } else if (namer.apply('multiRole', entityName) < namer.apply('multiRole', matrixDef)) {
+      left = {type:entityName};
+      right = {type:matrixDef};
     } else {
-      if (matrixDef.charAt(last = matrixDef.length - 1) === '#') {
-        left = {type:matrixDef.substring(0, last)};
-        right = {type:entityName};
-      } else {
-        if (namer.apply('multiRole', entityName) < namer.apply('multiRole', matrixDef)) {
-          left = {type:entityName};
-          right = {type:matrixDef};
-        } else {
-          left = {type:matrixDef};
-          right = {type:entityName};
-        }
-      }
+      left = {type:matrixDef};
+      right = {type:entityName};
     }
   } else {
     Ext.Assert.isString(matrixDef.type, 'No "type" for manyToMany in ' + entityName);
@@ -31159,13 +31107,11 @@ reloadOnClearSorters:false, autoLoadOnFilterEnd:undefined}, currentPage:1, loadi
   }
   if (grouper) {
     hasState = true;
-  } else {
-    if (storeGroupers) {
-      storeGroupers.each(function(g) {
-        groupers[groupers.length] = g.getState();
-        hasState = true;
-      });
-    }
+  } else if (storeGroupers) {
+    storeGroupers.each(function(g) {
+      groupers[groupers.length] = g.getState();
+      hasState = true;
+    });
   }
   if (hasState) {
     result = {};
@@ -31177,10 +31123,8 @@ reloadOnClearSorters:false, autoLoadOnFilterEnd:undefined}, currentPage:1, loadi
     }
     if (grouper) {
       result.grouper = grouper.getState();
-    } else {
-      if (groupers.length) {
-        result.groupers = groupers;
-      }
+    } else if (groupers.length) {
+      result.groupers = groupers;
     }
   }
   return result;
@@ -31195,10 +31139,8 @@ reloadOnClearSorters:false, autoLoadOnFilterEnd:undefined}, currentPage:1, loadi
   }
   if (stateGrouper) {
     me.setGrouper(stateGrouper);
-  } else {
-    if (stateGroupers) {
-      me.setGroupers(stateGroupers);
-    }
+  } else if (stateGroupers) {
+    me.setGroupers(stateGroupers);
   }
 }, hasPendingLoad:Ext.emptyFn, isLoaded:Ext.emptyFn, isLoading:Ext.emptyFn, destroy:function() {
   var me = this;
@@ -31243,11 +31185,9 @@ reloadOnClearSorters:false, autoLoadOnFilterEnd:undefined}, currentPage:1, loadi
         me.fireEvent('sort', me, sorters);
       }});
     }
-  } else {
-    if (sorterCount) {
-      me.fireEvent('datachanged', me);
-      me.fireEvent('refresh', me);
-    }
+  } else if (sorterCount) {
+    me.fireEvent('datachanged', me);
+    me.fireEvent('refresh', me);
   }
   if (fireSort) {
     me.fireEvent('sort', me, sorters);
@@ -31267,11 +31207,9 @@ reloadOnClearSorters:false, autoLoadOnFilterEnd:undefined}, currentPage:1, loadi
     if (!suppressNext && (me.isLoaded() || me.getAutoLoad() || me.getAutoLoadOnFilterEnd())) {
       me.load();
     }
-  } else {
-    if (!suppressNext) {
-      me.fireEvent('datachanged', me);
-      me.fireEvent('refresh', me);
-    }
+  } else if (!suppressNext) {
+    me.fireEvent('datachanged', me);
+    me.fireEvent('refresh', me);
   }
   if (me.trackStateChanges) {
     me.saveStatefulFilters = true;
@@ -31310,23 +31248,17 @@ reloadOnClearSorters:false, autoLoadOnFilterEnd:undefined}, currentPage:1, loadi
   if (groupers) {
     if (Ext.isArray(groupers)) {
       newGroupers = groupers;
-    } else {
-      if (Ext.isObject(groupers)) {
-        newGroupers = [groupers];
+    } else if (Ext.isObject(groupers)) {
+      newGroupers = [groupers];
+    } else if (Ext.isString(groupers)) {
+      grouper = colGroupers.get(groupers);
+      if (!grouper) {
+        grouper = {property:groupers, direction:direction || me.getGroupDir()};
+        newGroupers = [grouper];
+      } else if (direction === undefined) {
+        grouper.toggle();
       } else {
-        if (Ext.isString(groupers)) {
-          grouper = colGroupers.get(groupers);
-          if (!grouper) {
-            grouper = {property:groupers, direction:direction || me.getGroupDir()};
-            newGroupers = [grouper];
-          } else {
-            if (direction === undefined) {
-              grouper.toggle();
-            } else {
-              grouper.setDirection(direction);
-            }
-          }
-        }
+        grouper.setDirection(direction);
       }
     }
     if (newGroupers && newGroupers.length) {
@@ -31513,10 +31445,8 @@ constructor:function(config) {
   if (resultSet.getSuccess()) {
     me.doProcess(resultSet, request, response);
     me.setSuccessful(autoComplete);
-  } else {
-    if (autoComplete) {
-      me.setException(resultSet.getMessage());
-    }
+  } else if (autoComplete) {
+    me.setException(resultSet.getMessage());
   }
 }, _commitSetOptions:{convert:true, commit:true}, doProcess:function(resultSet, request, response) {
   var me = this, commitSetOptions = me._commitSetOptions, clientRecords = me.getRecords(), clientLen = clientRecords.length, clientIdProperty = clientRecords[0].clientIdProperty, serverRecords = resultSet.getRecords(), serverLen = serverRecords ? serverRecords.length : 0, clientMap, serverRecord, clientRecord, i;
@@ -31784,10 +31714,8 @@ unique:false, rank:null, stripRe:/[$,%]/g, calculated:false, evil:false, identif
   sortType = me.sortType;
   if (!me.sortType) {
     me.sortType = Ext.data.SortTypes.none;
-  } else {
-    if (Ext.isString(sortType)) {
-      me.sortType = Ext.data.SortTypes[sortType];
-    }
+  } else if (Ext.isString(sortType)) {
+    me.sortType = Ext.data.SortTypes[sortType];
   }
   if (depends && typeof depends === 'string') {
     me.depends = [depends];
@@ -31850,24 +31778,20 @@ unique:false, rank:null, stripRe:/[$,%]/g, calculated:false, evil:false, identif
       if (errors) {
         if (errors.isMixedCollection) {
           errors.add(this.name, result);
+        } else if (errors.isCollection) {
+          errors.add(result);
         } else {
-          if (errors.isCollection) {
-            errors.add(result);
-          } else {
-            errors.push(result);
-          }
+          errors.push(result);
         }
         ret = ret || result;
-      } else {
-        if (separator) {
-          if (ret) {
-            ret += separator;
-          }
-          ret += result;
-        } else {
-          ret = result;
-          break;
+      } else if (separator) {
+        if (ret) {
+          ret += separator;
         }
+        ret += result;
+      } else {
+        ret = result;
+        break;
       }
     }
   }
@@ -31933,10 +31857,8 @@ Ext.define('Ext.data.field.Array', {extend:Ext.data.field.Field, alias:'data.fie
   if (!me.itemField) {
     if (typeof t === 'string') {
       t = {type:t};
-    } else {
-      if (!(t && t.isDataField)) {
-        t = Ext.apply({type:'auto'}, t);
-      }
+    } else if (!(t && t.isDataField)) {
+      t = Ext.apply({type:'auto'}, t);
     }
     me.itemField = Ext.data.field.Field.create(t);
   }
@@ -31989,12 +31911,10 @@ Ext.define('Ext.data.field.Date', {extend:Ext.data.field.Field, alias:'data.fiel
     } else {
       result = result < 0 ? -1 : 1;
     }
+  } else if (lhsIsDate === rhsIsDate) {
+    result = 0;
   } else {
-    if (lhsIsDate === rhsIsDate) {
-      result = 0;
-    } else {
-      result = lhsIsDate ? 1 : -1;
-    }
+    result = lhsIsDate ? 1 : -1;
   }
   return result;
 }, convert:function(v) {
@@ -32126,12 +32046,10 @@ Ext.define('Ext.data.Model', {alternateClassName:'Ext.data.Record', isEntity:tru
       if (session) {
         identifier = session.getIdentifier(cls);
         id = identifier.generate();
+      } else if (modelIdentifier === identifier) {
+        id = internalId;
       } else {
-        if (modelIdentifier === identifier) {
-          id = internalId;
-        } else {
-          id = identifier.generate();
-        }
+        id = identifier.generate();
       }
       data[idProperty] = me.id = id;
       me.phantom = true;
@@ -32272,14 +32190,12 @@ Ext.define('Ext.data.Model', {alternateClassName:'Ext.data.Record', isEntity:tru
             delete modified[name];
             me.dirty = -1;
           }
-        } else {
-          if (dirty) {
-            if (!modified) {
-              me.modified = modified = {};
-            }
-            me.dirty = true;
-            modified[name] = currentValue;
+        } else if (dirty) {
+          if (!modified) {
+            me.modified = modified = {};
           }
+          me.dirty = true;
+          modified[name] = currentValue;
         }
       }
       if (name === me.idField.name) {
@@ -32338,10 +32254,8 @@ Ext.define('Ext.data.Model', {alternateClassName:'Ext.data.Record', isEntity:tru
   }
   if (commit) {
     me.commit(silent, modifiedFieldNames);
-  } else {
-    if (!silent && !me.editing && modifiedFieldNames) {
-      me.callJoined('afterEdit', [modifiedFieldNames]);
-    }
+  } else if (!silent && !me.editing && modifiedFieldNames) {
+    me.callJoined('afterEdit', [modifiedFieldNames]);
   }
   return modifiedFieldNames;
 }, reject:function(silent) {
@@ -32397,12 +32311,10 @@ Ext.define('Ext.data.Model', {alternateClassName:'Ext.data.Record', isEntity:tru
   var me = this, joined = me.joined;
   if (!joined) {
     joined = me.joined = [owner];
+  } else if (!joined.length) {
+    joined[0] = owner;
   } else {
-    if (!joined.length) {
-      joined[0] = owner;
-    } else {
-      Ext.Array.include(joined, owner);
-    }
+    Ext.Array.include(joined, owner);
   }
   if (owner.isStore && !me.store) {
     me.store = owner;
@@ -32414,10 +32326,8 @@ Ext.define('Ext.data.Model', {alternateClassName:'Ext.data.Record', isEntity:tru
   } else {
     if (len === 1 && joined[0] === owner) {
       joined.length = 0;
-    } else {
-      if (len) {
-        Ext.Array.remove(joined, owner);
-      }
+    } else if (len) {
+      Ext.Array.remove(joined, owner);
     }
     if (store === owner) {
       store = null;
@@ -32446,10 +32356,8 @@ Ext.define('Ext.data.Model', {alternateClassName:'Ext.data.Record', isEntity:tru
   var me = this, data = Ext.apply({}, me.data), idProperty = me.idProperty, T = me.self;
   if (newId || newId === 0) {
     data[idProperty] = newId;
-  } else {
-    if (newId === null) {
-      delete data[idProperty];
-    }
+  } else if (newId === null) {
+    delete data[idProperty];
   }
   return new T(data, session);
 }, getProxy:function() {
@@ -32457,7 +32365,7 @@ Ext.define('Ext.data.Model', {alternateClassName:'Ext.data.Record', isEntity:tru
 }, getValidation:function(refresh) {
   var me = this, ret = me.validation;
   if (!ret) {
-    me.validation = ret = new Ext.data.Validation;
+    me.validation = ret = new Ext.data.Validation();
     ret.attach(me);
   }
   if (refresh === true || refresh !== false && ret.syncGeneration !== me.generation) {
@@ -32465,7 +32373,7 @@ Ext.define('Ext.data.Model', {alternateClassName:'Ext.data.Record', isEntity:tru
   }
   return ret;
 }, validate:function() {
-  return (new Ext.data.ErrorCollection).init(this);
+  return (new Ext.data.ErrorCollection()).init(this);
 }, isValid:function() {
   return this.getValidation().isValid();
 }, toUrl:function() {
@@ -32516,11 +32424,9 @@ Ext.define('Ext.data.Model', {alternateClassName:'Ext.data.Record', isEntity:tru
           if (associated === undefined) {
             options.associated = deep;
             clear = true;
-          } else {
-            if (!deep) {
-              options.associated = false;
-              clear = true;
-            }
+          } else if (!deep) {
+            options.associated = false;
+            clear = true;
           }
           opts = options;
         } else {
@@ -32746,24 +32652,22 @@ Ext.define('Ext.data.Model', {alternateClassName:'Ext.data.Record', isEntity:tru
     me.fieldsMap = fieldsMap = {};
     me.fieldOrdinals = ordinals = {};
     cleared = true;
-  } else {
-    if (removeFields) {
-      for (i = removeFields.length; i-- > 0;) {
-        name = removeFields[i];
-        if (name in ordinals) {
-          delete ordinals[name];
-          delete fieldsMap[name];
-        }
+  } else if (removeFields) {
+    for (i = removeFields.length; i-- > 0;) {
+      name = removeFields[i];
+      if (name in ordinals) {
+        delete ordinals[name];
+        delete fieldsMap[name];
       }
-      for (i = 0, len = fields.length; i < len; ++i) {
-        name = (field = fields[i]).name;
-        if (name in ordinals) {
-          ordinals[name] = i;
-        } else {
-          fields.splice(i, 1);
-          --i;
-          --len;
-        }
+    }
+    for (i = 0, len = fields.length; i < len; ++i) {
+      name = (field = fields[i]).name;
+      if (name in ordinals) {
+        ordinals[name] = i;
+      } else {
+        fields.splice(i, 1);
+        --i;
+        --len;
       }
     }
   }
@@ -33000,11 +32904,9 @@ Ext.define('Ext.data.Model', {alternateClassName:'Ext.data.Record', isEntity:tru
     }
     if (field.evil) {
       (evilFields || (evilFields = [])).push(field);
-    } else {
-      if (!field.depends) {
-        rankedFields.push(field);
-        field.rank = rankedFields.length;
-      }
+    } else if (!field.depends) {
+      rankedFields.push(field);
+      field.rank = rankedFields.length;
     }
   }
   for (i = 0; i < length; ++i) {
@@ -33107,17 +33009,15 @@ Ext.define('Ext.data.Model', {alternateClassName:'Ext.data.Record', isEntity:tru
     idField.definedBy = cls;
     idField.ordinal = ordinal;
     idField.generated = true;
-  } else {
-    if (idDeclared && !superIdDeclared && superIdField && superIdField.generated) {
-      Ext.Array.remove(fields, superIdField);
-      delete fieldsMap[superIdFieldName];
-      delete fieldOrdinals[superIdFieldName];
-      fieldsMap[idProperty] = idDeclared;
-      for (i = 0, length = fields.length; i < length; ++i) {
-        field = fields[i];
-        fields.ordinal = i;
-        fieldOrdinals[field.name] = i;
-      }
+  } else if (idDeclared && !superIdDeclared && superIdField && superIdField.generated) {
+    Ext.Array.remove(fields, superIdField);
+    delete fieldsMap[superIdFieldName];
+    delete fieldOrdinals[superIdFieldName];
+    fieldsMap[idProperty] = idDeclared;
+    for (i = 0, length = fields.length; i < length; ++i) {
+      field = fields[i];
+      fields.ordinal = i;
+      fieldOrdinals[field.name] = i;
     }
   }
   idField.allowNull = idField.critical = idField.identifier = true;
@@ -33300,17 +33200,13 @@ Ext.define('Ext.data.Model', {alternateClassName:'Ext.data.Record', isEntity:tru
     delete data.identifier;
     delete data.idgen;
     identifier = Ext.Factory.dataIdentifier(identifier);
-  } else {
-    if (superIdent) {
-      if (superIdent.clone && !superIdent.getId()) {
-        identifier = superIdent.clone();
-      } else {
-        if (superIdent.isGenerator) {
-          identifier = superIdent;
-        } else {
-          identifier = Ext.Factory.dataIdentifier(superIdent);
-        }
-      }
+  } else if (superIdent) {
+    if (superIdent.clone && !superIdent.getId()) {
+      identifier = superIdent.clone();
+    } else if (superIdent.isGenerator) {
+      identifier = superIdent;
+    } else {
+      identifier = Ext.Factory.dataIdentifier(superIdent);
     }
   }
   cls.identifier = proto.identifier = identifier;
@@ -33357,14 +33253,10 @@ Ext.define('Ext.data.Model', {alternateClassName:'Ext.data.Record', isEntity:tru
       body.push('\n');
       if (convert && hasDefValue) {
         body.push('    v \x3d ', expr, ';\n' + '    if (v !\x3d\x3d undefined) {\n' + '        v \x3d ', fs, '.convert(v, e);\n' + '    }\n' + '    if (v \x3d\x3d\x3d undefined) {\n' + '        v \x3d ', bc, fs, '.defaultValue', ec, ';\n' + '    }\n' + '    ', expr, ' \x3d v;');
-      } else {
-        if (convert) {
-          body.push('    v \x3d ', fs, '.convert(', expr, ',e);\n' + '    if (v !\x3d\x3d undefined) {\n' + '        ', expr, ' \x3d v;\n' + '    }\n');
-        } else {
-          if (hasDefValue) {
-            body.push('    if (', expr, ' \x3d\x3d\x3d undefined) {\n' + '        ', expr, ' \x3d ', bc, fs, '.defaultValue', ec, ';\n' + '    }\n');
-          }
-        }
+      } else if (convert) {
+        body.push('    v \x3d ', fs, '.convert(', expr, ',e);\n' + '    if (v !\x3d\x3d undefined) {\n' + '        ', expr, ' \x3d v;\n' + '    }\n');
+      } else if (hasDefValue) {
+        body.push('    if (', expr, ' \x3d\x3d\x3d undefined) {\n' + '        ', expr, ' \x3d ', bc, fs, '.defaultValue', ec, ';\n' + '    }\n');
       }
     }
   }
@@ -33385,17 +33277,15 @@ Ext.define('Ext.data.Model', {alternateClassName:'Ext.data.Record', isEntity:tru
   Model.fieldsMap = proto.fieldsMap = {};
   Model.schema = proto.schema = Schema.get(proto.schema);
   proto.idField = new Ext.data.field.Field(proto.idProperty);
-  Model.identifier = new Ext.data.identifier.Sequential;
+  Model.identifier = new Ext.data.identifier.Sequential();
   Model.onExtended(function(cls, data) {
     var proto = cls.prototype, schemaName = data.schema, superCls = proto.superclass.self, schema, entityName, proxy;
     cls.idProperty = data.idProperty || proto.idProperty;
     if (schemaName) {
       delete data.schema;
       schema = Schema.get(schemaName);
-    } else {
-      if (!(schema = proto.schema)) {
-        schema = defaultSchema || (defaultSchema = Schema.get('default'));
-      }
+    } else if (!(schema = proto.schema)) {
+      schema = defaultSchema || (defaultSchema = Schema.get('default'));
     }
     cls.rankFields = Model.rankFields;
     cls.topoAdd = Model.topoAdd;
@@ -33436,10 +33326,8 @@ Ext.define('Ext.data.Model', {alternateClassName:'Ext.data.Record', isEntity:tru
     proxy = data.proxy;
     if (proxy) {
       delete data.proxy;
-    } else {
-      if (superCls !== Model) {
-        proxy = superCls.proxyConfig || superCls.proxy;
-      }
+    } else if (superCls !== Model) {
+      proxy = superCls.proxyConfig || superCls.proxy;
     }
     cls.proxyConfig = proxy;
   });
@@ -33488,10 +33376,8 @@ Ext.define('Ext.data.reader.Reader', {alternateClassName:['Ext.data.Reader', 'Ex
   if (transform) {
     if (Ext.isFunction(transform)) {
       transform = {fn:transform};
-    } else {
-      if (transform.charAt) {
-        transform = {fn:this[transform]};
-      }
+    } else if (transform.charAt) {
+      transform = {fn:this[transform]};
     }
     return transform.fn.bind(transform.scope || this);
   }
@@ -33507,10 +33393,8 @@ Ext.define('Ext.data.reader.Reader', {alternateClassName:['Ext.data.Reader', 'Ex
       } else {
         data = this.readRecords(result, readOptions);
       }
-    } else {
-      if (responseText !== '') {
-        data = this.readRecords(response, readOptions);
-      }
+    } else if (responseText !== '') {
+      data = this.readRecords(response, readOptions);
     }
   }
   return data || this.nullResultSet;
@@ -33710,12 +33594,10 @@ Ext.define('Ext.data.reader.Reader', {alternateClassName:['Ext.data.Reader', 'Ex
     if (proxy) {
       proxy.setModel(newModel);
     }
-  } else {
-    if (clientIdProperty) {
-      model = me.getModel();
-      if (model) {
-        model.self.prototype.clientIdProperty = clientIdProperty;
-      }
+  } else if (clientIdProperty) {
+    model = me.getModel();
+    if (model) {
+      model.self.prototype.clientIdProperty = clientIdProperty;
     }
   }
 }, buildExtractors:function(force) {
@@ -33775,7 +33657,7 @@ Ext.define('Ext.data.reader.Reader', {alternateClassName:['Ext.data.Reader', 'Ex
 }}}, function(Cls) {
   var proto = Cls.prototype;
   Ext.apply(proto, {nullResultSet:new Ext.data.ResultSet({total:0, count:0, records:[], success:true, message:''})});
-  proto.extractorCache = new Ext.util.LruCache;
+  proto.extractorCache = new Ext.util.LruCache();
 });
 Ext.define('Ext.data.writer.Writer', {alias:'writer.base', alternateClassName:['Ext.data.DataWriter', 'Ext.data.Writer'], mixins:[Ext.mixin.Factoryable], factoryConfig:{defaultType:null}, isWriter:true, config:{clientIdProperty:null, allDataOptions:{persist:true}, partialDataOptions:{changes:true, critical:true}, writeAllFields:false, dateFormat:null, nameProperty:'name', writeRecordId:true, transform:null}, constructor:function(config) {
   this.initConfig(config);
@@ -33813,10 +33695,8 @@ Ext.define('Ext.data.writer.Writer', {alias:'writer.base', alternateClassName:['
     if (clientIdProperty) {
       ret[clientIdProperty] = value;
       delete data[key];
-    } else {
-      if (!me.getWriteRecordId()) {
-        delete data[key];
-      }
+    } else if (!me.getWriteRecordId()) {
+      delete data[key];
     }
     for (key in data) {
       value = data[key];
@@ -33827,10 +33707,8 @@ Ext.define('Ext.data.writer.Writer', {alias:'writer.base', alternateClassName:['
       } else {
         if (field.isDateField && dateFormat && Ext.isDate(value)) {
           value = Ext.Date.format(value, dateFormat);
-        } else {
-          if (field.serialize) {
-            value = field.serialize(value, record);
-          }
+        } else if (field.serialize) {
+          value = field.serialize(value, record);
         }
         if (mapping) {
           key = field[nameProperty] || key;
@@ -33930,10 +33808,8 @@ Ext.define('Ext.data.proxy.Proxy', {mixins:[Ext.mixin.Factoryable, Ext.mixin.Obs
     if (Ext.isFunction(batchOptions.failure)) {
       Ext.callback(batchOptions.failure, scope, [batch, batchOptions]);
     }
-  } else {
-    if (Ext.isFunction(batchOptions.success)) {
-      Ext.callback(batchOptions.success, scope, [batch, batchOptions]);
-    }
+  } else if (Ext.isFunction(batchOptions.success)) {
+    Ext.callback(batchOptions.success, scope, [batch, batchOptions]);
   }
   if (Ext.isFunction(batchOptions.callback)) {
     Ext.callback(batchOptions.callback, scope, [batch, batchOptions]);
@@ -33992,10 +33868,8 @@ Ext.define('Ext.data.proxy.Memory', {extend:Ext.data.proxy.Client, alias:'proxy.
     }
     if (groupers && groupers.length) {
       sorters = sorters ? groupers.concat(sorters) : groupers;
-    } else {
-      if (grouper) {
-        sorters = sorters ? sorters.concat(grouper) : sorters;
-      }
+    } else if (grouper) {
+      sorters = sorters ? sorters.concat(grouper) : sorters;
     }
     if (sorters && sorters.length) {
       resultSet.setRecords(records = Ext.Array.sort(records, Ext.util.Sortable.createComparator(sorters)));
@@ -34069,11 +33943,9 @@ Ext.define('Ext.data.ProxyStore', {extend:Ext.data.AbstractStore, config:{model:
 }, applyModel:function(model) {
   if (model) {
     model = Ext.data.schema.Schema.lookupEntity(model);
-  } else {
-    if (!this.destroying) {
-      this.getFields();
-      model = this.getModel() || this.createImplicitModel();
-    }
+  } else if (!this.destroying) {
+    this.getFields();
+    model = this.getModel() || this.createImplicitModel();
   }
   return model;
 }, applyProxy:function(proxy) {
@@ -34085,19 +33957,15 @@ Ext.define('Ext.data.ProxyStore', {extend:Ext.data.AbstractStore, config:{model:
       } else {
         if (Ext.isString(proxy)) {
           proxy = {type:proxy, model:model};
-        } else {
-          if (!proxy.model) {
-            proxy = Ext.apply({model:model}, proxy);
-          }
+        } else if (!proxy.model) {
+          proxy = Ext.apply({model:model}, proxy);
         }
         proxy = Ext.createByAlias('proxy.' + proxy.type, proxy);
         proxy.autoCreated = true;
       }
-    } else {
-      if (model) {
-        proxy = model.getProxy();
-        this.useModelProxy = true;
-      }
+    } else if (model) {
+      proxy = model.getProxy();
+      this.useModelProxy = true;
     }
     if (!proxy) {
       proxy = Ext.createByAlias('proxy.memory');
@@ -34389,10 +34257,8 @@ Ext.define('Ext.util.Group', {extend:Ext.util.Collection, isGroup:true, config:{
   if (parent) {
     if (parent.isGroup) {
       groups = parent.getGroups();
-    } else {
-      if (parent.isGroupCollection) {
-        groups = parent;
-      }
+    } else if (parent.isGroupCollection) {
+      groups = parent;
     }
     if (groups) {
       groups.remove(this);
@@ -34533,7 +34399,7 @@ Ext.define('Ext.data.Group', {extend:Ext.util.Group, isDataGroup:true, store:nul
   if (!summaryRecord) {
     M = store.getModel();
     T = M.getSummaryModel();
-    me[property] = summaryRecord = new T;
+    me[property] = summaryRecord = new T();
     idProperty = M.idField.name;
     summaryRecord.data[idProperty] = summaryRecord.id = M.identifier.generate();
     summaryRecord.group = me;
@@ -34542,10 +34408,8 @@ Ext.define('Ext.data.Group', {extend:Ext.util.Group, isDataGroup:true, store:nul
   if (!store.getRemoteSummary() && !summaryRecord.isRemote && summaryRecord.summaryGeneration !== generation && calculate === true) {
     summaryRecord.calculateSummary(me.items);
     summaryRecord.summaryGeneration = generation;
-  } else {
-    if (store.getRemoteSummary() && summaryRecord.isRemote) {
-      me.fixRemoteSummary(summaryRecord);
-    }
+  } else if (store.getRemoteSummary() && summaryRecord.isRemote) {
+    me.fixRemoteSummary(summaryRecord);
   }
   summaryRecord.isNonData = true;
   return summaryRecord;
@@ -34608,7 +34472,7 @@ Ext.define('Ext.data.LocalStore', {extend:Ext.Mixin, mixinConfig:{id:'localstore
   if (!summaryRecord) {
     M = me.getModel();
     T = M.getSummaryModel();
-    me.summaryRecord = summaryRecord = new T;
+    me.summaryRecord = summaryRecord = new T();
     idProperty = M.idField.name;
     summaryRecord.data[idProperty] = summaryRecord.id = M.identifier.generate();
     summaryRecord.commit();
@@ -34759,7 +34623,7 @@ Ext.define('Ext.data.LocalStore', {extend:Ext.Mixin, mixinConfig:{id:'localstore
 }, addObserver:function(observer) {
   var observers = this.observers;
   if (!observers) {
-    this.observers = observers = new Ext.util.Collection;
+    this.observers = observers = new Ext.util.Collection();
   }
   observers.add(observer);
 }, removeObserver:function(observer) {
@@ -35128,27 +34992,23 @@ Ext.define('Ext.data.reader.Json', {extend:Ext.data.reader.Reader, alternateClas
         special = isDot || isLeft || isRight || !c;
         if (!special || inExpr > 1 || inExpr && !isRight) {
           part += c;
-        } else {
-          if (special) {
-            bracketed = false;
-            if (isLeft) {
-              ++inExpr;
+        } else if (special) {
+          bracketed = false;
+          if (isLeft) {
+            ++inExpr;
+          } else if (isRight) {
+            --inExpr;
+            bracketed = true;
+          }
+          if (part) {
+            if (bracketed) {
+              part = '[' + part + ']';
             } else {
-              if (isRight) {
-                --inExpr;
-                bracketed = true;
-              }
+              part = '.' + part;
             }
-            if (part) {
-              if (bracketed) {
-                part = '[' + part + ']';
-              } else {
-                part = '.' + part;
-              }
-              current += part;
-              parts.push('' + current);
-              part = '';
-            }
+            current += part;
+            parts.push('' + current);
+            part = '';
           }
         }
       }
@@ -35236,16 +35096,14 @@ Ext.define('Ext.data.writer.Json', {extend:Ext.data.writer.Writer, alternateClas
     } else {
       Ext.raise('Must specify a root when using encode');
     }
-  } else {
-    if (single || data && data.length) {
-      json = request.getJsonData() || {};
-      if (root) {
-        json[root] = data;
-      } else {
-        json = data;
-      }
-      request.setJsonData(json);
+  } else if (single || data && data.length) {
+    json = request.getJsonData() || {};
+    if (root) {
+      json[root] = data;
+    } else {
+      json = data;
     }
+    request.setJsonData(json);
   }
   return request;
 }});
@@ -35265,25 +35123,21 @@ Ext.define('Ext.util.SorterCollection', {extend:Ext.util.Collection, isSorterCol
       sorters = property;
       mode = direction;
       direction = null;
-    } else {
-      if (Ext.isString(property)) {
-        if (!(sorter = me.get(property))) {
-          sorters = [{property:property, direction:direction || options.getDefaultSortDirection()}];
-        } else {
-          sorters = [sorter];
-        }
+    } else if (Ext.isString(property)) {
+      if (!(sorter = me.get(property))) {
+        sorters = [{property:property, direction:direction || options.getDefaultSortDirection()}];
       } else {
-        if (Ext.isFunction(property)) {
-          sorters = [{sorterFn:property, direction:direction || options.getDefaultSortDirection()}];
-        } else {
-          if (!Ext.isObject(property)) {
-            Ext.raise('Invalid sort descriptor: ' + property);
-          }
-          sorters = [property];
-          mode = direction;
-          direction = null;
-        }
+        sorters = [sorter];
       }
+    } else if (Ext.isFunction(property)) {
+      sorters = [{sorterFn:property, direction:direction || options.getDefaultSortDirection()}];
+    } else {
+      if (!Ext.isObject(property)) {
+        Ext.raise('Invalid sort descriptor: ' + property);
+      }
+      sorters = [property];
+      mode = direction;
+      direction = null;
     }
     if (mode && !me._sortModes[mode]) {
       Ext.raise('Sort mode should be "multi", "append", "prepend" or "replace", not "' + mode + '"');
@@ -35303,10 +35157,8 @@ Ext.define('Ext.util.SorterCollection', {extend:Ext.util.Collection, isSorterCol
     }
     if (sorter && direction) {
       sorter.setDirection(direction);
-    } else {
-      if (index === 0 && primary && primary === me.getAt(0)) {
-        primary.toggle();
-      }
+    } else if (index === 0 && primary && primary === me.getAt(0)) {
+      primary.toggle();
     }
     me.endUpdate();
   }
@@ -35340,18 +35192,16 @@ Ext.define('Ext.util.SorterCollection', {extend:Ext.util.Collection, isSorterCol
         return currentSorter;
       }
       sorterConfig.property = sorter;
+    } else if (type === 'function') {
+      sorterConfig.sorterFn = sorter;
     } else {
-      if (type === 'function') {
-        sorterConfig.sorterFn = sorter;
-      } else {
-        if (!Ext.isObject(sorter)) {
-          Ext.raise('Invalid sorter specified: ' + sorter);
-        }
-        sorterConfig = Ext.apply(sorterConfig, sorter);
-        if (sorterConfig.fn) {
-          sorterConfig.sorterFn = sorterConfig.fn;
-          delete sorterConfig.fn;
-        }
+      if (!Ext.isObject(sorter)) {
+        Ext.raise('Invalid sorter specified: ' + sorter);
+      }
+      sorterConfig = Ext.apply(sorterConfig, sorter);
+      if (sorterConfig.fn) {
+        sorterConfig.sorterFn = sorterConfig.fn;
+        delete sorterConfig.fn;
       }
     }
     sorter = Ext.create(xclass || Ext.util.Sorter, sorterConfig);
@@ -35381,17 +35231,15 @@ Ext.define('Ext.util.SorterCollection', {extend:Ext.util.Collection, isSorterCol
           if (sorter) {
             remove.push(sorter);
           }
-        } else {
-          if (type === 'function') {
-            for (n = currentSorters.length; n-- > 0;) {
-              item = currentSorters[n];
-              if (item.getSorterFn() === sorter) {
-                remove.push(item);
-              }
+        } else if (type === 'function') {
+          for (n = currentSorters.length; n-- > 0;) {
+            item = currentSorters[n];
+            if (item.getSorterFn() === sorter) {
+              remove.push(item);
             }
-          } else {
-            Ext.raise('Invalid sorter specification: ' + sorter);
           }
+        } else {
+          Ext.raise('Invalid sorter specification: ' + sorter);
         }
       }
     }
@@ -35471,14 +35319,10 @@ Ext.define('Ext.util.FilterCollection', {extend:Ext.util.Collection, isFilterCol
           match = false;
           if (isString) {
             match = item.getProperty() === filter;
-          } else {
-            if (isFunction) {
-              match = item.getFilterFn() === filter;
-            } else {
-              if (isProp) {
-                match = item.getProperty() === filter.property && item.getValue() === filter.value;
-              }
-            }
+          } else if (isFunction) {
+            match = item.getFilterFn() === filter;
+          } else if (isProp) {
+            match = item.getProperty() === filter.property && item.getValue() === filter.value;
           }
           if (match) {
             remove.push(item);
@@ -35780,26 +35624,24 @@ Ext.define('Ext.util.GroupCollection', {extend:Ext.util.Collection, isGroupColle
       group.setParent(source.isGroup ? source : me);
       group.setLabel(label);
     }
-  } else {
-    if (createGroups !== false) {
-      group = me.emptyGroups[key];
-      if (group && group.destroyed) {
-        delete me.emptyGroups[key];
-        group = null;
-      }
-      if (group) {
-        group.setLabel(null);
-      } else {
-        group = Ext.create(Ext.apply({xclass:'Ext.util.Group', groupConfig:me.getGroupConfig()}, me.getGroupConfig()));
-      }
-      me.setAutoSort(false);
-      group.setConfig({groupKey:key, grouper:grouper, groupers:groupers, label:key, rootProperty:me.getItemRoot(), sorters:source.getSorters(), autoSort:autoSort, autoGroup:me.getAutoGroup(), parent:source.isGroup ? source : me});
-      group.ejectTime = null;
-      me.add(group);
-      me.setAutoSort(autoSort);
-      if (prop) {
-        group.setCustomData(prop, (root ? item[root] : item)[prop]);
-      }
+  } else if (createGroups !== false) {
+    group = me.emptyGroups[key];
+    if (group && group.destroyed) {
+      delete me.emptyGroups[key];
+      group = null;
+    }
+    if (group) {
+      group.setLabel(null);
+    } else {
+      group = Ext.create(Ext.apply({xclass:'Ext.util.Group', groupConfig:me.getGroupConfig()}, me.getGroupConfig()));
+    }
+    me.setAutoSort(false);
+    group.setConfig({groupKey:key, grouper:grouper, groupers:groupers, label:key, rootProperty:me.getItemRoot(), sorters:source.getSorters(), autoSort:autoSort, autoGroup:me.getAutoGroup(), parent:source.isGroup ? source : me});
+    group.ejectTime = null;
+    me.add(group);
+    me.setAutoSort(autoSort);
+    if (prop) {
+      group.setCustomData(prop, (root ? item[root] : item)[prop]);
     }
   }
   return group;
@@ -35845,13 +35687,11 @@ Ext.define('Ext.util.GroupCollection', {extend:Ext.util.Collection, isGroupColle
     group = emptyGroups[groupKey];
     if (!group || group.destroyed) {
       delete emptyGroups[groupKey];
+    } else if (!group.length && Ext.now() - group.ejectTime > me.emptyGroupRetainTime) {
+      Ext.destroy(group);
+      delete emptyGroups[groupKey];
     } else {
-      if (!group.length && Ext.now() - group.ejectTime > me.emptyGroupRetainTime) {
-        Ext.destroy(group);
-        delete emptyGroups[groupKey];
-      } else {
-        reschedule = true;
-      }
+      reschedule = true;
     }
   }
   if (reschedule) {
@@ -36022,10 +35862,8 @@ Ext.define('Ext.data.Store', {extend:Ext.data.ProxyStore, alias:'store.store', m
           if (!data.contains(record)) {
             continue;
           }
-        } else {
-          if (!(record = data.getAt(record))) {
-            continue;
-          }
+        } else if (!(record = data.getAt(record))) {
+          continue;
         }
         toRemove.push(record);
       }
@@ -36087,10 +35925,8 @@ Ext.define('Ext.data.Store', {extend:Ext.data.ProxyStore, alias:'store.store', m
   if (index < data.length) {
     if (arguments.length === 1) {
       count = 1;
-    } else {
-      if (!count) {
-        return;
-      }
+    } else if (!count) {
+      return;
     }
     data.removeAt(index, count);
   }
@@ -36444,10 +36280,8 @@ Ext.define('Ext.data.Store', {extend:Ext.data.ProxyStore, alias:'store.store', m
         for (i = 0, len = records.length; i < len; ++i) {
           moving += map[records[i].id] ? 1 : 0;
         }
-      } else {
-        if (map[records.id]) {
-          ++moving;
-        }
+      } else if (map[records.id]) {
+        ++moving;
       }
     } else {
       moving = getMap ? map : this.moveMapCount;
@@ -36462,11 +36296,9 @@ Ext.define('Ext.data.Store', {extend:Ext.data.ProxyStore, alias:'store.store', m
       if (grouper) {
         options.grouper = grouper;
       }
-    } else {
-      if (!options.groupers) {
-        if (groupers && groupers.length) {
-          options.groupers = groupers.getRange();
-        }
+    } else if (!options.groupers) {
+      if (groupers && groupers.length) {
+        options.groupers = groupers.getRange();
       }
     }
   }
@@ -36633,14 +36465,10 @@ Ext.define('Ext.app.domain.Store', {extend:Ext.app.EventDomain, singleton:true, 
   var result = false, alias = target.alias;
   if (selector === '*') {
     result = true;
-  } else {
-    if (this.idMatchRe.test(selector)) {
-      result = target.getStoreId() === selector.substring(1);
-    } else {
-      if (alias) {
-        result = Ext.Array.indexOf(alias, this.prefix + selector) > -1;
-      }
-    }
+  } else if (this.idMatchRe.test(selector)) {
+    result = target.getStoreId() === selector.substring(1);
+  } else if (alias) {
+    result = Ext.Array.indexOf(alias, this.prefix + selector) > -1;
   }
   return result;
 }});
@@ -36681,10 +36509,8 @@ Ext.define('Ext.app.Controller', {extend:Ext.app.BaseController, statics:{string
     getterName = me.getGetterName(shortName, strings.upper);
     if (!cls[getterName]) {
       cls[getterName] = getter = me.createGetter(strings.getter, name);
-    } else {
-      if (getterName === 'getMainView') {
-        Ext.log.warn("Cannot have a view named 'Main' - getter conflicts " + 'with mainView config.');
-      }
+    } else if (getterName === 'getMainView') {
+      Ext.log.warn("Cannot have a view named 'Main' - getter conflicts " + 'with mainView config.');
     }
     if (getter && kind !== 'controller') {
       getter['Ext.app.getter'] = true;
@@ -36695,20 +36521,18 @@ Ext.define('Ext.app.Controller', {extend:Ext.app.BaseController, statics:{string
   if ((sep = name.indexOf('@')) > 0) {
     shortName = name.substring(0, sep);
     absoluteName = name.substring(sep + 1) + '.' + shortName;
+  } else if (name.indexOf('.') > 0 && (Ext.ClassManager.isCreated(name) || this.hasRegisteredPrefix(name))) {
+    absoluteName = name;
+    shortName = name.replace(namespace + '.' + kind + '.', '');
   } else {
-    if (name.indexOf('.') > 0 && (Ext.ClassManager.isCreated(name) || this.hasRegisteredPrefix(name))) {
-      absoluteName = name;
-      shortName = name.replace(namespace + '.' + kind + '.', '');
+    if (!namespace) {
+      Ext.log.warn('Cannot find namespace for ' + kind + ' ' + name + ', ' + 'assuming it is fully qualified class name');
+    }
+    if (namespace) {
+      absoluteName = namespace + '.' + kind + '.' + (profileName ? profileName + '.' + name : name);
+      shortName = name;
     } else {
-      if (!namespace) {
-        Ext.log.warn('Cannot find namespace for ' + kind + ' ' + name + ', ' + 'assuming it is fully qualified class name');
-      }
-      if (namespace) {
-        absoluteName = namespace + '.' + kind + '.' + (profileName ? profileName + '.' + name : name);
-        shortName = name;
-      } else {
-        absoluteName = name;
-      }
+      absoluteName = name;
     }
   }
   return {absoluteName:absoluteName, shortName:shortName};
@@ -36744,10 +36568,8 @@ Ext.define('Ext.app.Controller', {extend:Ext.app.BaseController, statics:{string
         value.ref = key;
         newRefs.push(value);
       });
-    } else {
-      if (Ext.isArray(refs)) {
-        newRefs = Ext.Array.merge(newRefs, refs);
-      }
+    } else if (Ext.isArray(refs)) {
+      newRefs = Ext.Array.merge(newRefs, refs);
     }
   }
   refs = me.refs;
@@ -36973,16 +36795,14 @@ Ext.define('Ext.app.Application', {extend:Ext.app.Controller, isApplication:true
     if (appProperty) {
       if (!ns[appProperty]) {
         ns[appProperty] = me;
-      } else {
-        if (ns[appProperty] !== me) {
-          Ext.log.warn('An existing reference is being overwritten for ' + name + '.' + appProperty + '. See the appProperty config.');
-        }
+      } else if (ns[appProperty] !== me) {
+        Ext.log.warn('An existing reference is being overwritten for ' + name + '.' + appProperty + '. See the appProperty config.');
       }
     }
   }
 }, initControllers:function() {
   var me = this, controllers = Ext.Array.from(me.controllers), profile = me.getCurrentProfile(), i, ln;
-  me.controllers = new Ext.util.MixedCollection;
+  me.controllers = new Ext.util.MixedCollection();
   for (i = 0, ln = controllers.length; i < ln; i++) {
     me.getController(controllers[i]);
   }
@@ -37019,10 +36839,8 @@ Ext.define('Ext.app.Application', {extend:Ext.app.Controller, isApplication:true
   token = History.getToken();
   if (token || token === defaultToken) {
     Ext.route.Router.onStateChange(token);
-  } else {
-    if (defaultToken) {
-      History.replace(defaultToken);
-    }
+  } else if (defaultToken) {
+    History.replace(defaultToken);
   }
   if (Ext.Microloader && Ext.Microloader.appUpdate && Ext.Microloader.appUpdate.updated) {
     Ext.Microloader.fireAppUpdate();
@@ -37120,7 +36938,7 @@ Ext.application = function(config) {
       if (Viewport && Viewport.setup) {
         Viewport.setup(App.prototype.config.viewport);
       }
-      Ext.app.Application.instance = new App;
+      Ext.app.Application.instance = new App();
     });
   };
   if (typeof config === 'string') {
@@ -37216,12 +37034,10 @@ Ext.define('Ext.mixin.Container', {extend:Ext.Mixin, mixinConfig:{id:'container'
     entry = nameRefs[key];
     if (!entry) {
       entry = component.shareableName ? [component] : component;
+    } else if (!entry.isInstance) {
+      entry.push(component);
     } else {
-      if (!entry.isInstance) {
-        entry.push(component);
-      } else {
-        Ext.raise('Duplicate name: "' + key + '" on ' + me.id + ' between ' + entry.id + ' and ' + component.id);
-      }
+      Ext.raise('Duplicate name: "' + key + '" on ' + me.id + ' between ' + entry.id + ' and ' + component.id);
     }
     nameRefs[key] = entry;
   }
@@ -37249,27 +37065,21 @@ Ext.define('Ext.mixin.Container', {extend:Ext.Mixin, mixinConfig:{id:'container'
   if (controller) {
     inheritedState.referenceHolder = controller;
     referenceHolder = true;
-  } else {
-    if (referenceHolder) {
-      inheritedState.referenceHolder = me;
-    }
+  } else if (referenceHolder) {
+    inheritedState.referenceHolder = me;
   }
   if (referenceHolder) {
     inheritedState.referencePath = '';
-  } else {
-    if (reference && me.isParentReference) {
-      inheritedState.referencePath = me.referenceKey + '.';
-    }
+  } else if (reference && me.isParentReference) {
+    inheritedState.referencePath = me.referenceKey + '.';
   }
   if (session) {
     inheritedState.session = session;
   }
   if (viewModel) {
     inheritedState.viewModelPath = '';
-  } else {
-    if (reference && me.isParentReference) {
-      inheritedState.viewModelPath = me.viewModelKey + '.';
-    }
+  } else if (reference && me.isParentReference) {
+    inheritedState.viewModelPath = me.viewModelKey + '.';
   }
 }, setupReference:function(reference) {
   var len;
@@ -37294,10 +37104,8 @@ Ext.define('Ext.util.KeyMap', {alternateClassName:'Ext.KeyMap', eventName:'keydo
   }
   if (me.binding) {
     me.addBinding(me.binding);
-  } else {
-    if (config.key) {
-      me.addBinding(config);
-    }
+  } else if (config.key) {
+    me.addBinding(config);
   }
   me.enable();
 }, addBinding:function(binding) {
@@ -37392,19 +37200,17 @@ Ext.define('Ext.util.KeyMap', {alternateClassName:'Ext.KeyMap', eventName:'keydo
           return result;
         }
       }
-    } else {
-      if (keyCode.length) {
-        for (i = 0, len = keyCode.length; i < len; i++) {
-          if (key === keyCode[i]) {
-            result = handler.call(scope, key, event);
-            if (result !== true && defaultEventAction) {
-              event[defaultEventAction]();
-            }
-            if (result === false) {
-              return result;
-            }
-            break;
+    } else if (keyCode.length) {
+      for (i = 0, len = keyCode.length; i < len; i++) {
+        if (key === keyCode[i]) {
+          result = handler.call(scope, key, event);
+          if (result !== true && defaultEventAction) {
+            event[defaultEventAction]();
           }
+          if (result === false) {
+            return result;
+          }
+          break;
         }
       }
     }
@@ -37686,20 +37492,14 @@ Ext.define('Ext.mixin.FocusableContainer', {extend:Ext.Mixin, mixinConfig:{id:'f
   for (;; i += step) {
     if (idx < 0 && (i >= len || i < 0)) {
       return null;
-    } else {
-      if (i >= len) {
-        i = -1;
-        continue;
-      } else {
-        if (i < 0) {
-          i = len;
-          continue;
-        } else {
-          if (i === idx) {
-            return null;
-          }
-        }
-      }
+    } else if (i >= len) {
+      i = -1;
+      continue;
+    } else if (i < 0) {
+      i = len;
+      continue;
+    } else if (i === idx) {
+      return null;
     }
     item = items[i];
     if (!item || !item.focusable || item.isDisabled() && !allowDisabled) {
@@ -37709,10 +37509,8 @@ Ext.define('Ext.mixin.FocusableContainer', {extend:Ext.Mixin, mixinConfig:{id:'f
       if (item.isTabbable && item.isTabbable()) {
         return item;
       }
-    } else {
-      if (beforeRender || item.isFocusable && item.isFocusable()) {
-        return item;
-      }
+    } else if (beforeRender || item.isFocusable && item.isFocusable()) {
+      return item;
     }
   }
   return null;
@@ -37775,21 +37573,19 @@ Ext.define('Ext.mixin.FocusableContainer', {extend:Ext.Mixin, mixinConfig:{id:'f
     active = Ext.ComponentManager.getActiveComponent();
     me.clearFocusables();
     me.activateFocusable(active);
-  } else {
-    if (me.resetFocusPosition || me.lastFocusedChild == null) {
-      me.clearFocusables();
-      if (child.hasFocus) {
-        me.activateFocusable(child);
-        active = child;
-      }
-    } else {
-      me.deactivateFocusable(child);
-      if (child === me.lastFocusedChild) {
-        me.clearFocusables();
-        me.activateFocusable(child);
-      }
-      active = me.findNextFocusableChild({firstTabbable:true});
+  } else if (me.resetFocusPosition || me.lastFocusedChild == null) {
+    me.clearFocusables();
+    if (child.hasFocus) {
+      me.activateFocusable(child);
+      active = child;
     }
+  } else {
+    me.deactivateFocusable(child);
+    if (child === me.lastFocusedChild) {
+      me.clearFocusables();
+      me.activateFocusable(child);
+    }
+    active = me.findNextFocusableChild({firstTabbable:true});
   }
   if (!active) {
     me.initDefaultFocusable();
@@ -37830,7 +37626,7 @@ Ext.define('Ext.mixin.FocusableContainer', {extend:Ext.Mixin, mixinConfig:{id:'f
 Ext.define('Ext.Container', {extend:Ext.Component, alternateClassName:['Ext.lib.Container', 'Ext.container.Container'], xtype:'container', isContainer:true, mixins:[Ext.mixin.Queryable, Ext.mixin.Container, Ext.mixin.FocusableContainer], eventedConfig:{activeItem:0}, config:{activeItemIndex:null, autoSize:null, bodyCls:null, layout:'auto', control:null, defaults:null, items:null, autoDestroy:true, defaultType:null, defaultFocus:{$value:null, lazy:true}, innerCls:null, masked:null}, weighted:false, 
 manageBorders:false, classCls:Ext.baseCSSPrefix + 'container', managedBordersCls:Ext.baseCSSPrefix + 'managed-borders', template:[{reference:'bodyElement', cls:Ext.baseCSSPrefix + 'body-el', uiCls:'body-el'}], constructor:function(config) {
   var me = this;
-  me._items = me.items = new Ext.util.ItemCollection;
+  me._items = me.items = new Ext.util.ItemCollection();
   me.innerItems = [];
   me.getReferences = me.getFirstReferences;
   me.onItemAdd = me.onFirstItemAdd;
@@ -37849,14 +37645,10 @@ manageBorders:false, classCls:Ext.baseCSSPrefix + 'container', managedBordersCls
   if (masked === false) {
     masked = true;
     isVisible = false;
-  } else {
-    if (Ext.isString(masked)) {
-      masked = {xtype:'loadmask', message:masked};
-    } else {
-      if (masked && !masked.isComponent && masked.hidden) {
-        isVisible = false;
-      }
-    }
+  } else if (Ext.isString(masked)) {
+    masked = {xtype:'loadmask', message:masked};
+  } else if (masked && !masked.isComponent && masked.hidden) {
+    isVisible = false;
   }
   currentMask = Ext.factory(masked, Ext['Mask'], this.getMasked());
   if (currentMask) {
@@ -38019,10 +37811,8 @@ manageBorders:false, classCls:Ext.baseCSSPrefix + 'container', managedBordersCls
         me.onFocusableChildAdd(item);
       }
       addedItems.push(item);
-    } else {
-      if (item !== null) {
-        Ext.raise('Invalid item passed to add');
-      }
+    } else if (item !== null) {
+      Ext.raise('Invalid item passed to add');
     }
   }
   if ((me.isConfiguring || !me.getActiveItem()) && me.innerItems.length > 0) {
@@ -38067,10 +37857,8 @@ manageBorders:false, classCls:Ext.baseCSSPrefix + 'container', managedBordersCls
       item = me.getComponent(which[index]);
       if (item === activeItem) {
         wasActive = true;
-      } else {
-        if (item) {
-          me.remove(item, destroy);
-        }
+      } else if (item) {
+        me.remove(item, destroy);
       }
     }
     if (wasActive) {
@@ -38335,43 +38123,35 @@ manageBorders:false, classCls:Ext.baseCSSPrefix + 'container', managedBordersCls
   }
   if (!activeItem && innerItems.length === 0) {
     return 0;
-  } else {
-    if (typeof activeItem === 'number') {
-      activeItem = Math.max(0, Math.min(activeItem, innerItems.length - 1));
-      activeItem = innerItems[activeItem];
-      if (activeItem) {
-        return activeItem;
-      } else {
-        if (currentActiveItem) {
-          return null;
-        }
-      }
-    } else {
-      if (activeItem) {
-        if (typeof activeItem === 'string') {
-          item = me.child(activeItem);
-        } else {
-          if (activeItem.isComponent) {
-            item = activeItem;
-          } else {
-            activeItem = Ext.apply({$initParent:me}, activeItem);
-            item = me.factoryItem(activeItem);
-          }
-        }
-        if (!item) {
-          return null;
-        }
-        me.pendingActiveItem = item;
-        if (!item.isInnerItem()) {
-          Ext.Logger.error('Setting activeItem to be a non-inner item');
-        }
-        if (!me.has(item)) {
-          me.add(item);
-        }
-        delete item.$initParent;
-        return item;
-      }
+  } else if (typeof activeItem === 'number') {
+    activeItem = Math.max(0, Math.min(activeItem, innerItems.length - 1));
+    activeItem = innerItems[activeItem];
+    if (activeItem) {
+      return activeItem;
+    } else if (currentActiveItem) {
+      return null;
     }
+  } else if (activeItem) {
+    if (typeof activeItem === 'string') {
+      item = me.child(activeItem);
+    } else if (activeItem.isComponent) {
+      item = activeItem;
+    } else {
+      activeItem = Ext.apply({$initParent:me}, activeItem);
+      item = me.factoryItem(activeItem);
+    }
+    if (!item) {
+      return null;
+    }
+    me.pendingActiveItem = item;
+    if (!item.isInnerItem()) {
+      Ext.Logger.error('Setting activeItem to be a non-inner item');
+    }
+    if (!me.has(item)) {
+      me.add(item);
+    }
+    delete item.$initParent;
+    return item;
   }
 }, animateActiveItem:function(activeItem, animation) {
   var layout = this.getLayout(), defaultAnimation;
@@ -38462,10 +38242,8 @@ manageBorders:false, classCls:Ext.baseCSSPrefix + 'container', managedBordersCls
   var delegate = this.findDefaultFocus();
   if (delegate) {
     return delegate.isWidget ? delegate.getFocusEl() : delegate;
-  } else {
-    if (this.focusable) {
-      return this.focusEl;
-    }
+  } else if (this.focusable) {
+    return this.focusEl;
   }
   return undefined;
 }, findDefaultFocus:function() {
@@ -38498,12 +38276,10 @@ manageBorders:false, classCls:Ext.baseCSSPrefix + 'container', managedBordersCls
     if (!bodySizerElement) {
       me.bodySizerElement = me.bodyElement.wrap({cls:Ext.baseCSSPrefix + 'body-sizer-el'});
     }
-  } else {
-    if (bodySizerElement) {
-      me.bodyElement.unwrap();
-      bodySizerElement.destroy();
-      me.bodySizerElement = null;
-    }
+  } else if (bodySizerElement) {
+    me.bodyElement.unwrap();
+    bodySizerElement.destroy();
+    me.bodySizerElement = null;
   }
 }, updateMaxHeight:function(maxHeight, oldMaxHeight) {
   var me = this;
@@ -38540,10 +38316,8 @@ manageBorders:false, classCls:Ext.baseCSSPrefix + 'container', managedBordersCls
 }, setChildRendered:function(rendered, item) {
   if (item.isInnerItem()) {
     this.getLayout().renderInnerItem(item);
-  } else {
-    if (!rendered || !item.getFloated()) {
-      item.setRendered(rendered);
-    }
+  } else if (!rendered || !item.getFloated()) {
+    item.setRendered(rendered);
   }
 }, getMaxHeightElement:function() {
   var el = this.el, maxHeightElement = this.maxHeightElement, selector = '.x-dock,.x-panelheader,.x-body-el,.x-body-wrap-el,.x-tab-guard-el', childNodes, node, i, ln;
@@ -38737,18 +38511,12 @@ right:'end'}, positionDirectionMap:{top:'vertical', bottom:'vertical', left:'hor
   var me = this, container = me.getContainer(), floated = item.getFloated();
   if (item.getDocked() != null) {
     me.dockItem(item);
-  } else {
-    if (item.isCentered()) {
-      me.onItemCenteredChange(item, true);
-    } else {
-      if (item.isPositioned()) {
-        me.onItemPositionedChange(item, true);
-      } else {
-        if (!floated) {
-          me.onItemInnerStateChange(item, true);
-        }
-      }
-    }
+  } else if (item.isCentered()) {
+    me.onItemCenteredChange(item, true);
+  } else if (item.isPositioned()) {
+    me.onItemPositionedChange(item, true);
+  } else if (!floated) {
+    me.onItemInnerStateChange(item, true);
   }
   if (container.rendered && !floated) {
     if (item.isInnerItem()) {
@@ -38793,29 +38561,21 @@ right:'end'}, positionDirectionMap:{top:'vertical', bottom:'vertical', left:'hor
   var me = this;
   if (item.getDocked()) {
     me.undockItem(item);
-  } else {
-    if (item.isCentered()) {
-      me.onItemCenteredChange(item, false);
-    } else {
-      if (item.isPositioned()) {
-        me.onItemPositionedChange(item, false);
-      } else {
-        if (!item.getFloated()) {
-          me.onItemInnerStateChange(item, false, destroying);
-        }
-      }
-    }
+  } else if (item.isCentered()) {
+    me.onItemCenteredChange(item, false);
+  } else if (item.isPositioned()) {
+    me.onItemPositionedChange(item, false);
+  } else if (!item.getFloated()) {
+    me.onItemInnerStateChange(item, false, destroying);
   }
 }, onItemMove:function(item, toIndex, fromIndex) {
   if (item.isCentered() || item.isPositioned()) {
     item.setZIndex((toIndex + 1) * 2);
+  } else if (item.isInnerItem()) {
+    this.insertInnerItem(item, this.getContainer().innerIndexOf(item));
   } else {
-    if (item.isInnerItem()) {
-      this.insertInnerItem(item, this.getContainer().innerIndexOf(item));
-    } else {
-      this.undockItem(item);
-      this.dockItem(item);
-    }
+    this.undockItem(item);
+    this.dockItem(item);
   }
 }, onItemCenteredChange:function(item, centered) {
   var wrapperName = '$centerWrapper';
@@ -39365,7 +39125,7 @@ Ext.define('Ext.layout.card.fx.Reveal', {extend:Ext.layout.card.fx.Style, alias:
 Ext.define('Ext.layout.card.fx.Scroll', {extend:Ext.layout.card.fx.Abstract, alias:'layout.card.fx.scroll', config:{duration:150}, getEasing:function() {
   var easing = this.easing;
   if (!easing) {
-    this.easing = easing = new Ext.fx.easing.Linear;
+    this.easing = easing = new Ext.fx.easing.Linear();
   }
   return easing;
 }, updateDuration:function(duration) {
@@ -39392,11 +39152,9 @@ Ext.define('Ext.layout.card.fx.Scroll', {extend:Ext.layout.card.fx.Abstract, ali
     if (direction === 'right') {
       direction = 'left';
       this.isReverse = reverse = !reverse;
-    } else {
-      if (direction === 'down') {
-        direction = 'up';
-        this.isReverse = reverse = !reverse;
-      }
+    } else if (direction === 'down') {
+      direction = 'up';
+      this.isReverse = reverse = !reverse;
     }
     if (direction === 'left') {
       if (reverse) {
@@ -39443,10 +39201,8 @@ Ext.define('Ext.layout.card.fx.Scroll', {extend:Ext.layout.card.fx.Abstract, ali
   me.currentEventController.resume();
   if (me.isReverse && oldItem && oldItem.renderElement && oldItem.renderElement.dom) {
     oldItem.renderElement[scroll](null);
-  } else {
-    if (newItem && newItem.renderElement && newItem.renderElement.dom) {
-      newItem.renderElement[scroll](null);
-    }
+  } else if (newItem && newItem.renderElement && newItem.renderElement.dom) {
+    newItem.renderElement[scroll](null);
   }
   Ext.AnimationQueue.stop(this.doAnimationFrame, this);
   me.isAnimating = false;
@@ -39993,18 +39749,12 @@ Ext.define('Ext.viewport.Default', function() {
     size = menu.element.measure(sideValue & (LEFT | RIGHT) ? 'w' : 'h');
     if (sideValue === LEFT) {
       viewportAfter.translateX = size;
-    } else {
-      if (sideValue === RIGHT) {
-        viewportAfter.translateX = -size;
-      } else {
-        if (sideValue === TOP) {
-          viewportAfter.translateY = size;
-        } else {
-          if (sideValue === BOTTOM) {
-            viewportAfter.translateY = -size;
-          }
-        }
-      }
+    } else if (sideValue === RIGHT) {
+      viewportAfter.translateX = -size;
+    } else if (sideValue === TOP) {
+      viewportAfter.translateY = size;
+    } else if (sideValue === BOTTOM) {
+      viewportAfter.translateY = -size;
     }
     menu.translate(0, 0, {duration:200});
     if (!menu.getFloated()) {
@@ -40019,18 +39769,12 @@ Ext.define('Ext.viewport.Default', function() {
     size = menu.element.measure(sideValue & (LEFT | RIGHT) ? 'w' : 'h');
     if (sideValue === LEFT) {
       after.translateX = -size;
-    } else {
-      if (sideValue === RIGHT) {
-        after.translateX = size;
-      } else {
-        if (sideValue === TOP) {
-          after.translateY = -size;
-        } else {
-          if (sideValue === BOTTOM) {
-            after.translateY = size;
-          }
-        }
-      }
+    } else if (sideValue === RIGHT) {
+      after.translateX = size;
+    } else if (sideValue === TOP) {
+      after.translateY = -size;
+    } else if (sideValue === BOTTOM) {
+      after.translateY = size;
     }
     if (animation) {
       menu.revertFocus();
@@ -40107,18 +39851,12 @@ Ext.define('Ext.viewport.Default', function() {
     size = menu.element.measure(sideValue & (LEFT | RIGHT) ? 'w' : 'h');
     if (sideValue === LEFT) {
       before.translateX = -size;
-    } else {
-      if (sideValue === RIGHT) {
-        before.translateX = size;
-      } else {
-        if (sideValue === TOP) {
-          before.translateY = -size;
-        } else {
-          if (sideValue === BOTTOM) {
-            before.translateY = size;
-          }
-        }
-      }
+    } else if (sideValue === RIGHT) {
+      before.translateX = size;
+    } else if (sideValue === TOP) {
+      before.translateY = -size;
+    } else if (sideValue === BOTTOM) {
+      before.translateY = size;
     }
     menu.translate(before.translateX, before.translateY);
   }, disableTabbing:function() {
@@ -40185,21 +39923,15 @@ Ext.define('Ext.viewport.Default', function() {
     if (side === LEFT) {
       after.translateX = movement;
       viewportAfter.translateX = viewportMovement;
-    } else {
-      if (side === RIGHT) {
-        after.translateX = -movement;
-        viewportAfter.translateX = -viewportMovement;
-      } else {
-        if (side === TOP) {
-          after.translateY = movement;
-          viewportAfter.translateY = viewportMovement;
-        } else {
-          if (side === BOTTOM) {
-            after.translateY = -movement;
-            viewportAfter.translateY = -viewportMovement;
-          }
-        }
-      }
+    } else if (side === RIGHT) {
+      after.translateX = -movement;
+      viewportAfter.translateX = -viewportMovement;
+    } else if (side === TOP) {
+      after.translateY = movement;
+      viewportAfter.translateY = viewportMovement;
+    } else if (side === BOTTOM) {
+      after.translateY = -movement;
+      viewportAfter.translateY = -viewportMovement;
     }
     menu.translate(after.translateX, after.translateY);
     if (!menu.getFloated()) {
@@ -40216,23 +39948,17 @@ Ext.define('Ext.viewport.Default', function() {
       if (velocity.x > 0) {
         shouldRevert = true;
       }
-    } else {
-      if (side === LEFT) {
-        if (velocity.x < 0) {
-          shouldRevert = true;
-        }
-      } else {
-        if (side === TOP) {
-          if (velocity.y < 0) {
-            shouldRevert = true;
-          }
-        } else {
-          if (side === BOTTOM) {
-            if (velocity.y > 0) {
-              shouldRevert = true;
-            }
-          }
-        }
+    } else if (side === LEFT) {
+      if (velocity.x < 0) {
+        shouldRevert = true;
+      }
+    } else if (side === TOP) {
+      if (velocity.y < 0) {
+        shouldRevert = true;
+      }
+    } else if (side === BOTTOM) {
+      if (velocity.y > 0) {
+        shouldRevert = true;
       }
     }
     movement = shouldRevert ? size : 0;
@@ -40240,21 +39966,15 @@ Ext.define('Ext.viewport.Default', function() {
     if (side === LEFT) {
       after.translateX = -movement;
       viewportAfter.translateX = -viewportMovement;
-    } else {
-      if (side === RIGHT) {
-        after.translateX = movement;
-        viewportAfter.translateX = viewportMovement;
-      } else {
-        if (side === TOP) {
-          after.translateY = -movement;
-          viewportAfter.translateY = -viewportMovement;
-        } else {
-          if (side === BOTTOM) {
-            after.translateY = movement;
-            viewportAfter.translateY = viewportMovement;
-          }
-        }
-      }
+    } else if (side === RIGHT) {
+      after.translateX = movement;
+      viewportAfter.translateX = viewportMovement;
+    } else if (side === TOP) {
+      after.translateY = -movement;
+      viewportAfter.translateY = -viewportMovement;
+    } else if (side === BOTTOM) {
+      after.translateY = movement;
+      viewportAfter.translateY = viewportMovement;
     }
     menu.translate(after.translateX, after.translateY, {duration:200, callback:function() {
       if (shouldRevert) {
@@ -40268,10 +39988,8 @@ Ext.define('Ext.viewport.Default', function() {
   }, sideForDirection:function(direction) {
     if (direction === 'up') {
       direction = 'top';
-    } else {
-      if (direction === 'down') {
-        direction = 'bottom';
-      }
+    } else if (direction === 'down') {
+      direction = 'bottom';
     }
     return oppositeSide[sideMap[direction]];
   }, sideForSwipeDirection:function(direction) {
@@ -40536,20 +40254,16 @@ Ext.define('Ext.viewport.Android', {extend:Ext.viewport.Default, config:{transla
         this.scrollToTop();
       }
     }});
-  } else {
-    if (version.gtEq('3.1')) {
-      this.override({isHeightMaximized:function(height) {
-        this.scrollToTop();
-        return this.getWindowHeight() === height - 1;
-      }});
-    } else {
-      if (version.match('3')) {
-        this.override({isHeightMaximized:function() {
-          this.scrollToTop();
-          return true;
-        }});
-      }
-    }
+  } else if (version.gtEq('3.1')) {
+    this.override({isHeightMaximized:function(height) {
+      this.scrollToTop();
+      return this.getWindowHeight() === height - 1;
+    }});
+  } else if (version.match('3')) {
+    this.override({isHeightMaximized:function() {
+      this.scrollToTop();
+      return true;
+    }});
   }
   if (version.gtEq('4')) {
     this.override({doBlurInput:Ext.emptyFn});
@@ -40756,7 +40470,7 @@ Ext.define('Ext.util.Scheduler', {mixins:[Ext.mixin.Observable], busyCounter:0, 
   }
   this.id = Ext.util.Scheduler.count = (Ext.util.Scheduler.count || 0) + 1;
   this.mixins.observable.constructor.call(this, config);
-  this.items = new Ext.util.Bag;
+  this.items = new Ext.util.Bag();
 }, destroy:function() {
   var me = this, timer = me.timer;
   if (timer) {
@@ -40859,10 +40573,8 @@ Ext.define('Ext.util.Scheduler', {mixins:[Ext.mixin.Observable], busyCounter:0, 
     s = parts[i];
     if ((c = s.charAt(0)) === '-') {
       direction[i] = -1;
-    } else {
-      if (c !== '+') {
-        c = 0;
-      }
+    } else if (c !== '+') {
+      c = 0;
     }
     if (c) {
       parts[i] = s.substring(1);
@@ -40963,10 +40675,8 @@ Ext.define('Ext.util.Scheduler', {mixins:[Ext.mixin.Observable], busyCounter:0, 
       me.lastBusyCounter = busyCounter;
       me.fireEvent('busy', me);
     }
-  } else {
-    if (me.lastBusyCounter && !me.timer) {
-      me.scheduleTick();
-    }
+  } else if (me.lastBusyCounter && !me.timer) {
+    me.scheduleTick();
   }
 }, isBusy:function() {
   return !this.isIdle();
@@ -41160,12 +40870,10 @@ Ext.define('Ext.data.matrix.Slice', {constructor:function(side, id) {
         }
         otherSlice.members[id] = assoc;
         call = 1;
-      } else {
-        if (state !== assoc[2] && state !== 0 && !(state === 1 && assoc[2] === 0)) {
-          assoc[2] = state;
-          otherSlice = otherSlices[otherId];
-          call = 1;
-        }
+      } else if (state !== assoc[2] && state !== 0 && !(state === 1 && assoc[2] === 0)) {
+        assoc[2] = state;
+        otherSlice = otherSlices[otherId];
+        call = 1;
       }
     }
     if (call) {
@@ -41337,7 +41045,7 @@ Ext.define('Ext.data.session.BatchVisitor', {map:null, constructor:function(batc
   var map = this.map, batch = this.batch, bucket, entity, name, operation, operationType, proxy, batchActions, records, len, i;
   if (map) {
     if (!batch) {
-      batch = new Ext.data.Batch;
+      batch = new Ext.data.Batch();
     }
     for (name in map) {
       bucket = map[name];
@@ -41545,7 +41253,7 @@ Ext.define('Ext.data.Session', {mixins:[Ext.mixin.Dirty, Ext.mixin.Observable], 
   }
   return record;
 }, getSaveBatch:function(sort) {
-  var visitor = new Ext.data.session.BatchVisitor;
+  var visitor = new Ext.data.session.BatchVisitor();
   this.visitData(visitor);
   return visitor.getBatch(sort);
 }, onInvalidAssociationEntity:function(entityType, id) {
@@ -41653,10 +41361,8 @@ Ext.define('Ext.data.Session', {mixins:[Ext.mixin.Dirty, Ext.mixin.Observable], 
   }
   if (!name) {
     Ext.raise('Unable to use anonymous models in a Session');
-  } else {
-    if (!this.getSchema().getEntity(name)) {
-      Ext.raise('Unknown entity type ' + name);
-    }
+  } else if (!this.getSchema().getEntity(name)) {
+    Ext.raise('Unknown entity type ' + name);
   }
 }, createEntities:function(entityType, items) {
   var me = this, len = items.length, i, data, rec, id;
@@ -41914,10 +41620,8 @@ Ext.define('Ext.data.Session', {mixins:[Ext.mixin.Dirty, Ext.mixin.Observable], 
           if (visitor.onDirtyRecord) {
             visitor.onDirtyRecord(record);
           }
-        } else {
-          if (visitor.onCleanRecord) {
-            visitor.onCleanRecord(record);
-          }
+        } else if (visitor.onCleanRecord) {
+          visitor.onCleanRecord(record);
         }
       }
     }
@@ -42292,14 +41996,12 @@ Ext.define('Ext.app.bind.Stub', {extend:Ext.app.bind.AbstractStub, isStub:true, 
         } else {
           ret = parentData.data[name];
         }
+      } else if (parentData.isStore && storeMappings[name]) {
+        ret = parentData[storeMappings[name]]();
       } else {
-        if (parentData.isStore && storeMappings[name]) {
-          ret = parentData[storeMappings[name]]();
-        } else {
-          ret = parentData[name];
-          if (ret === undefined && me.hadValue) {
-            ret = null;
-          }
+        ret = parentData[name];
+        if (ret === undefined && me.hadValue) {
+          ret = null;
         }
       }
     }
@@ -42314,10 +42016,8 @@ Ext.define('Ext.app.bind.Stub', {extend:Ext.app.bind.AbstractStub, isStub:true, 
         ret = parentData[associations[name].getterName]();
       }
     }
-  } else {
-    if (parentData.isStore && name in storeMappings) {
-      ret = parentData[storeMappings[name]]();
-    }
+  } else if (parentData.isStore && name in storeMappings) {
+    ret = parentData[storeMappings[name]]();
   }
   if (!ret || !(ret.$className || Ext.isObject(ret))) {
     parentData[name] = ret = {};
@@ -42370,17 +42070,15 @@ Ext.define('Ext.app.bind.Stub', {extend:Ext.app.bind.AbstractStub, isStub:true, 
   if (formula && !formula.settingValue && formula.set) {
     formula.setValue(value);
     return;
-  } else {
-    if (me.isLinkStub) {
-      formulaStub = me.getLinkFormulaStub();
-      formula = formulaStub ? formulaStub.formula : null;
-      if (formula) {
-        if (formulaStub.isReadOnly()) {
-          Ext.raise('Cannot setValue on a readonly formula');
-        }
-        formula.setValue(value);
-        return;
+  } else if (me.isLinkStub) {
+    formulaStub = me.getLinkFormulaStub();
+    formula = formulaStub ? formulaStub.formula : null;
+    if (formula) {
+      if (formulaStub.isReadOnly()) {
+        Ext.raise('Cannot setValue on a readonly formula');
       }
+      formula.setValue(value);
+      return;
     }
   }
   parentData = parent.getDataObject();
@@ -42396,17 +42094,15 @@ Ext.define('Ext.app.bind.Stub', {extend:Ext.app.bind.AbstractStub, isStub:true, 
     } else {
       parentData.set(name, value);
     }
-  } else {
-    if (value && value.constructor === Object || !(value === parentData[name] && parentData.hasOwnProperty(name))) {
-      if (preventClimb || !me.setByLink(value)) {
-        if (value === undefined) {
-          delete parentData[name];
-        } else {
-          parentData[name] = value;
-        }
-        me.inspectValue(parentData);
-        me.invalidate(true);
+  } else if (value && value.constructor === Object || !(value === parentData[name] && parentData.hasOwnProperty(name))) {
+    if (preventClimb || !me.setByLink(value)) {
+      if (value === undefined) {
+        delete parentData[name];
+      } else {
+        parentData[name] = value;
       }
+      me.inspectValue(parentData);
+      me.invalidate(true);
     }
   }
 }, onStoreDataChanged:function() {
@@ -42502,11 +42198,9 @@ Ext.define('Ext.app.bind.Stub', {extend:Ext.app.bind.AbstractStub, isStub:true, 
         return;
       }
       me.lastValidationGeneration = generation;
-    } else {
-      if (bound.isModel) {
-        if (children && children[me.validationKey]) {
-          bound.isValid();
-        }
+    } else if (bound.isModel) {
+      if (children && children[me.validationKey]) {
+        bound.isValid();
       }
     }
   }
@@ -42539,11 +42233,9 @@ Ext.define('Ext.app.bind.Stub', {extend:Ext.app.bind.AbstractStub, isStub:true, 
               availableSet = true;
             }
           }
-        } else {
-          if (parentValue.isStore && bindMappings.store[name] && name !== 'loading') {
-            available = !parent.isLoading();
-            availableSet = true;
-          }
+        } else if (parentValue.isStore && bindMappings.store[name] && name !== 'loading') {
+          available = !parent.isLoading();
+          availableSet = true;
         }
       }
       if (!availableSet) {
@@ -42580,18 +42272,14 @@ Ext.define('Ext.app.bind.Stub', {extend:Ext.app.bind.AbstractStub, isStub:true, 
     associations = parentData.associations;
     if (associations && name in associations) {
       boundValue = parentData[associations[name].getterName]();
-    } else {
-      if (name === me.validationKey) {
-        boundValue = parentData.getValidation();
-        me.lastValidationGeneration = null;
-      }
+    } else if (name === me.validationKey) {
+      boundValue = parentData.getValidation();
+      me.lastValidationGeneration = null;
     }
-  } else {
-    if (parentData) {
-      raw = parentData[name];
-      if (raw && (raw.isModel || raw.isStore)) {
-        boundValue = raw;
-      }
+  } else if (parentData) {
+    raw = parentData[name];
+    if (raw && (raw.isModel || raw.isStore)) {
+      boundValue = raw;
     }
   }
   changed = current !== boundValue;
@@ -42746,26 +42434,22 @@ Ext.define('Ext.app.bind.RootStub', {extend:Ext.app.bind.AbstractStub, isRootStu
       if (!stub) {
         stub = me.createRootChild(key, setSelf);
         created = true;
-      } else {
-        if (setSelf && stub.isLinkStub && !stub.getLinkFormulaStub()) {
-          stub = me.insertChild(key);
-        }
+      } else if (setSelf && stub.isLinkStub && !stub.getLinkFormulaStub()) {
+        stub = me.insertChild(key);
       }
       if (!created || !data.hasOwnProperty(value)) {
         owner.invalidateChildLinks(key);
       }
       stub.set(v, setSelf);
-    } else {
-      if (data.hasOwnProperty(key)) {
-        delete data[key];
-        stub = children[key];
-        if (stub) {
-          if (!stub.isLinkStub && parentVM) {
-            stub = me.createRootChild(key);
-          }
-          owner.invalidateChildLinks(key, true);
-          stub.invalidate(true);
+    } else if (data.hasOwnProperty(key)) {
+      delete data[key];
+      stub = children[key];
+      if (stub) {
+        if (!stub.isLinkStub && parentVM) {
+          stub = me.createRootChild(key);
         }
+        owner.invalidateChildLinks(key, true);
+        stub.invalidate(true);
       }
     }
   }
@@ -42836,17 +42520,13 @@ Ext.define('Ext.app.bind.Multi', {extend:Ext.app.bind.BaseBinding, isMultiBindin
     b = multiBindDescr[i];
     if (b && (b.reference || Ext.isString(b))) {
       dynamic = me.add(b, array, i);
+    } else if (Ext.isArray(b)) {
+      dynamic = me.addArray(b, array[i] = []);
+    } else if (b && b.constructor === Object) {
+      dynamic = me.addObject(b, array[i] = {});
     } else {
-      if (Ext.isArray(b)) {
-        dynamic = me.addArray(b, array[i] = []);
-      } else {
-        if (b && b.constructor === Object) {
-          dynamic = me.addObject(b, array[i] = {});
-        } else {
-          array[i] = b;
-          dynamic = false;
-        }
-      }
+      array[i] = b;
+      dynamic = false;
     }
     hasDynamic = hasDynamic || dynamic;
   }
@@ -42857,17 +42537,13 @@ Ext.define('Ext.app.bind.Multi', {extend:Ext.app.bind.BaseBinding, isMultiBindin
     b = multiBindDescr[name];
     if (b && (b.reference || Ext.isString(b))) {
       dynamic = me.add(b, object, name);
+    } else if (Ext.isArray(b)) {
+      dynamic = me.addArray(b, object[name] = []);
+    } else if (b && b.constructor === Object) {
+      dynamic = me.addObject(b, object[name] = {});
     } else {
-      if (Ext.isArray(b)) {
-        dynamic = me.addArray(b, object[name] = []);
-      } else {
-        if (b && b.constructor === Object) {
-          dynamic = me.addObject(b, object[name] = {});
-        } else {
-          object[name] = b;
-          dynamic = false;
-        }
-      }
+      object[name] = b;
+      dynamic = false;
     }
     if (staticKeys && !dynamic) {
       staticKeys.push(name);
@@ -43043,7 +42719,7 @@ Ext.define('Ext.app.bind.Formula', {extend:Ext.util.Schedulable, statics:{getFor
   }
 }}});
 Ext.define('Ext.util.Fly', {inheritableStatics:{flyPoolSize:2, fly:function() {
-  var T = this, flyweights = T.flyweights || (T.flyweights = []), instance = flyweights.length ? flyweights.pop() : new T;
+  var T = this, flyweights = T.flyweights || (T.flyweights = []), instance = flyweights.length ? flyweights.pop() : new T();
   instance.reset.apply(instance, arguments);
   return instance;
 }}, release:function() {
@@ -43151,16 +42827,12 @@ Ext.define('Ext.parse.Tokenizer', function(Tokenizer) {
     if (!ret) {
       if (c === '"' || c === "'") {
         ret = me.parseString();
+      } else if (digitRe.test(c)) {
+        ret = me.parseNumber();
+      } else if (me.identFirstRe.test(c)) {
+        ret = me.parseIdent();
       } else {
-        if (digitRe.test(c)) {
-          ret = me.parseNumber();
-        } else {
-          if (me.identFirstRe.test(c)) {
-            ret = me.parseIdent();
-          } else {
-            ret = me.syntaxError('Unexpected character');
-          }
-        }
+        ret = me.syntaxError('Unexpected character');
       }
     }
     return ret;
@@ -43173,12 +42845,10 @@ Ext.define('Ext.parse.Tokenizer', function(Tokenizer) {
           return me.syntaxError(end, 'Unexpected dot operator');
         }
         ++end;
+      } else if (identRe.test(c)) {
+        ++end;
       } else {
-        if (identRe.test(c)) {
-          ++end;
-        } else {
-          break;
-        }
+        break;
       }
       prev = c;
     }
@@ -43196,31 +42866,25 @@ Ext.define('Ext.parse.Tokenizer', function(Tokenizer) {
           break;
         }
         ++me.pos;
-      } else {
-        if (c === '.') {
-          if (decimal) {
-            break;
-          }
-          decimal = true;
-          ++me.pos;
-        } else {
-          if (c === 'e' || c === 'E') {
-            if (exp) {
-              break;
-            }
-            decimal = exp = true;
-            c = text.charAt(++me.pos);
-            if (c === '-' || c === '+') {
-              ++me.pos;
-            }
-          } else {
-            if (digitRe.test(c)) {
-              ++me.pos;
-            } else {
-              break;
-            }
-          }
+      } else if (c === '.') {
+        if (decimal) {
+          break;
         }
+        decimal = true;
+        ++me.pos;
+      } else if (c === 'e' || c === 'E') {
+        if (exp) {
+          break;
+        }
+        decimal = exp = true;
+        c = text.charAt(++me.pos);
+        if (c === '-' || c === '+') {
+          ++me.pos;
+        }
+      } else if (digitRe.test(c)) {
+        ++me.pos;
+      } else {
+        break;
       }
     }
     token = {type:'literal', is:NUMBER, value:+text.substring(start, me.pos)};
@@ -43285,10 +42949,8 @@ Ext.define('Ext.parse.Symbol', {priority:0, constructor:function(id, config) {
   var me = this, defaultProperty = me.defaultProperty;
   if (config && typeof config === 'object') {
     Ext.apply(me, config);
-  } else {
-    if (config !== undefined && defaultProperty) {
-      me[defaultProperty] = config;
-    }
+  } else if (config !== undefined && defaultProperty) {
+    me[defaultProperty] = config;
   }
   me.id = id;
 }, dump:function() {
@@ -43409,19 +43071,15 @@ Ext.define('Ext.parse.Parser', function() {
     value = token.value;
     if (is.ident) {
       symbol = symbols[value] || symbols['(ident)'];
-    } else {
-      if (is.operator) {
-        if (!(symbol = symbols[value])) {
-          me.syntaxError(token.at, 'Unknown operator "' + value + '"');
-        }
-        name = token.name;
-      } else {
-        if (is.literal) {
-          symbol = symbols['(literal)'];
-        } else {
-          me.syntaxError(token.at, 'Unexpected token');
-        }
+    } else if (is.operator) {
+      if (!(symbol = symbols[value])) {
+        me.syntaxError(token.at, 'Unknown operator "' + value + '"');
       }
+      name = token.name;
+    } else if (is.literal) {
+      symbol = symbols['(literal)'];
+    } else {
+      me.syntaxError(token.at, 'Unexpected token');
     }
     me.token = symbol = Ext.Object.chain(symbol);
     symbol.at = index;
@@ -43472,17 +43130,15 @@ Ext.define('Ext.parse.Parser', function() {
     if (symbol) {
       if (typeof config === 'object') {
         cfg = config;
-      } else {
-        if (update && type) {
-          update = Ext.Array.from(update);
-          length = update.length;
-          cfg = {};
-          for (i = 0; i < length; i++) {
-            cfg[update[i]] = type.prototype[update[i]];
-          }
-        } else {
-          return symbol;
+      } else if (update && type) {
+        update = Ext.Array.from(update);
+        length = update.length;
+        cfg = {};
+        for (i = 0; i < length; i++) {
+          cfg[update[i]] = type.prototype[update[i]];
         }
+      } else {
+        return symbol;
       }
       symbol.update(cfg);
     } else {
@@ -43637,13 +43293,11 @@ Ext.define('Ext.app.bind.Parser', {extend:Ext.parse.Parser, infix:{':':{priority
   var v = expr.value, op = expr.operand;
   if (v === '!' || v === '-' || v === '+') {
     return v + '(' + this.compile(op) + ')';
-  } else {
-    if (v === '@') {
-      if (!op.isIdent) {
-        return this.syntaxError(expr.at, 'Compile error! Unexpected symbol');
-      }
-      return op.value;
+  } else if (v === '@') {
+    if (!op.isIdent) {
+      return this.syntaxError(expr.at, 'Compile error! Unexpected symbol');
     }
+    return op.value;
   }
   return '';
 }, compileBinary:function(expr) {
@@ -43664,11 +43318,9 @@ Ext.define('Ext.app.bind.Parser', {extend:Ext.parse.Parser, infix:{':':{priority
   var fmt, args = [], code = '', length, i;
   if (expr.isIdent) {
     fmt = expr.value;
-  } else {
-    if (expr.isInvoke) {
-      fmt = expr.operand.value;
-      args = expr.args;
-    }
+  } else if (expr.isInvoke) {
+    fmt = expr.operand.value;
+    args = expr.args;
   }
   if (fmt.substring(0, 5) === 'this.') {
     fmt = 'me.' + fmt.substring(5);
@@ -43746,23 +43398,19 @@ Ext.define('Ext.app.bind.Template', {escapes:false, buffer:null, slots:null, tok
     if (escaped) {
       c = text[i + 1];
       ++i;
-    } else {
-      if (c === lit && prev === lit && !lastEscaped) {
-        current = current.slice(0, -1);
-        current += text.substring(i + 1);
-        break;
-      } else {
-        if (c === '{') {
-          if (current) {
-            buffer[pos++] = current;
-            current = '';
-          }
-          parser.reset(text, i + 1);
-          i = me.parseExpression(parser, pos);
-          ++pos;
-          continue;
-        }
+    } else if (c === lit && prev === lit && !lastEscaped) {
+      current = current.slice(0, -1);
+      current += text.substring(i + 1);
+      break;
+    } else if (c === '{') {
+      if (current) {
+        buffer[pos++] = current;
+        current = '';
       }
+      parser.reset(text, i + 1);
+      i = me.parseExpression(parser, pos);
+      ++pos;
+      continue;
     }
     current += c;
     ++i;
@@ -44015,12 +43663,10 @@ Ext.define('Ext.app.ViewModel', {mixins:[Ext.mixin.Factoryable, Ext.mixin.Identi
   var ret = value, key;
   if (typeof value === 'string') {
     ret = '~~' + value;
-  } else {
-    if (value && value.constructor === Object) {
-      ret = {};
-      for (key in value) {
-        ret[key] = this.escape(value[key]);
-      }
+  } else if (value && value.constructor === Object) {
+    ret = {};
+    for (key in value) {
+      ret[key] = this.escape(value[key]);
     }
   }
   return ret;
@@ -44074,14 +43720,12 @@ Ext.define('Ext.app.ViewModel', {mixins:[Ext.mixin.Factoryable, Ext.mixin.Identi
   }
   if (!Ext.isString(descriptor)) {
     binding = new Ext.app.bind.Multi(descriptor, me, callback, scope, options);
+  } else if (me.expressionRe.test(descriptor)) {
+    descriptor = descriptor.substring(1, descriptor.length - 1);
+    binding = me.bindExpression(descriptor, callback, scope, options);
+    track = false;
   } else {
-    if (me.expressionRe.test(descriptor)) {
-      descriptor = descriptor.substring(1, descriptor.length - 1);
-      binding = me.bindExpression(descriptor, callback, scope, options);
-      track = false;
-    } else {
-      binding = new Ext.app.bind.TemplateBinding(descriptor, me, callback, scope, options);
-    }
+    binding = new Ext.app.bind.TemplateBinding(descriptor, me, callback, scope, options);
   }
   if (track) {
     me.bindings[binding.id] = binding;
@@ -44147,15 +43791,13 @@ Ext.define('Ext.app.ViewModel', {mixins:[Ext.mixin.Factoryable, Ext.mixin.Identi
   if (value === undefined && path && path.constructor === Object) {
     stub = me.getRoot();
     value = path;
+  } else if (path && path.indexOf('.') < 0) {
+    obj = {};
+    obj[path] = value;
+    value = obj;
+    stub = me.getRoot();
   } else {
-    if (path && path.indexOf('.') < 0) {
-      obj = {};
-      obj[path] = value;
-      value = obj;
-      stub = me.getRoot();
-    } else {
-      stub = me.getStub(path);
-    }
+    stub = me.getStub(path);
   }
   stub.set(value);
 }, privates:{registerChild:function(child) {
@@ -44188,7 +43830,7 @@ Ext.define('Ext.app.ViewModel', {mixins:[Ext.mixin.Factoryable, Ext.mixin.Identi
       record = Model.createWithId(id);
       record.load();
     } else {
-      record = new Model;
+      record = new Model();
     }
   }
   return record;
@@ -44293,12 +43935,10 @@ Ext.define('Ext.app.ViewModel', {mixins:[Ext.mixin.Factoryable, Ext.mixin.Identi
       cfg.$wasInstance = true;
       me.setupStore(cfg, key);
       continue;
+    } else if (Ext.isString(cfg)) {
+      cfg = {source:cfg};
     } else {
-      if (Ext.isString(cfg)) {
-        cfg = {source:cfg};
-      } else {
-        cfg = Ext.apply({}, cfg);
-      }
+      cfg = Ext.apply({}, cfg);
     }
     listeners = cfg.listeners;
     delete cfg.listeners;
@@ -44397,26 +44037,20 @@ Ext.define('Ext.app.domain.Controller', {extend:Ext.app.EventDomain, singleton:t
   var result = false, alias = target.alias;
   if (selector === '*') {
     result = true;
-  } else {
-    if (selector === '#') {
-      result = !!target.isApplication;
-    } else {
-      if (this.idMatchRe.test(selector)) {
-        result = target.getId() === selector.substring(1);
-      } else {
-        if (alias) {
-          result = Ext.Array.indexOf(alias, this.prefix + selector) > -1;
-        }
-      }
-    }
+  } else if (selector === '#') {
+    result = !!target.isApplication;
+  } else if (this.idMatchRe.test(selector)) {
+    result = target.getId() === selector.substring(1);
+  } else if (alias) {
+    result = Ext.Array.indexOf(alias, this.prefix + selector) > -1;
   }
   return result;
 }});
 Ext.define('Ext.direct.Manager', {singleton:true, mixins:[Ext.mixin.Observable], exceptions:{TRANSPORT:'xhr', PARSE:'parse', DATA:'data', LOGIN:'login', SERVER:'exception'}, providerClasses:{}, remotingMethods:{}, config:{varName:'Ext.REMOTING_API'}, apiNotFoundError:'Ext Direct API was not found at {0}', constructor:function() {
   var me = this;
   me.mixins.observable.constructor.call(me);
-  me.transactions = new Ext.util.MixedCollection;
-  me.providers = new Ext.util.MixedCollection;
+  me.transactions = new Ext.util.MixedCollection();
+  me.providers = new Ext.util.MixedCollection();
 }, addProvider:function(provider) {
   var me = this, args = arguments, relayers = me.relayers || (me.relayers = {}), i, len;
   if (args.length > 1) {
@@ -44500,28 +44134,24 @@ Ext.define('Ext.direct.Manager', {singleton:true, mixins:[Ext.mixin.Observable],
   }
   if (event.name && event.name !== 'event' && event.name !== 'exception') {
     me.fireEvent(event.name, event);
-  } else {
-    if (event.status === false) {
-      me.fireEvent('exception', event);
-    }
+  } else if (event.status === false) {
+    me.fireEvent('exception', event);
   }
   me.fireEvent('event', event, provider);
 }, parseMethod:function(fn) {
   var current = Ext.global, i = 0, resolved, parts, len;
   if (Ext.isFunction(fn)) {
     resolved = fn;
-  } else {
-    if (Ext.isString(fn)) {
-      resolved = this.remotingMethods[fn];
-      if (!resolved) {
-        parts = fn.split('.');
-        len = parts.length;
-        while (current && i < len) {
-          current = current[parts[i]];
-          ++i;
-        }
-        resolved = Ext.isFunction(current) ? current : null;
+  } else if (Ext.isString(fn)) {
+    resolved = this.remotingMethods[fn];
+    if (!resolved) {
+      parts = fn.split('.');
+      len = parts.length;
+      while (current && i < len) {
+        current = current[parts[i]];
+        ++i;
       }
+      resolved = Ext.isFunction(current) ? current : null;
     }
   }
   return resolved || null;
@@ -44648,48 +44278,46 @@ Ext.define('Ext.dom.Helper', function() {
     var me = this, specType = typeof spec, attr, val, tag, i, closeTags;
     if (specType === 'string' || specType === 'number') {
       buffer.push(spec);
-    } else {
-      if (Ext.isArray(spec)) {
-        for (i = 0; i < spec.length; i++) {
-          if (spec[i]) {
-            me.generateMarkup(spec[i], buffer);
-          }
+    } else if (Ext.isArray(spec)) {
+      for (i = 0; i < spec.length; i++) {
+        if (spec[i]) {
+          me.generateMarkup(spec[i], buffer);
         }
-      } else {
-        tag = spec.tag || 'div';
-        buffer.push('\x3c', tag);
-        for (attr in spec) {
-          if (spec.hasOwnProperty(attr)) {
-            val = spec[attr];
-            if (val !== undefined && !me.confRe.test(attr)) {
-              if (val && val.join) {
-                val = val.join(' ');
-              }
-              if (typeof val === 'object') {
-                buffer.push(' ', attr, '\x3d"');
-                me.generateStyles(val, buffer, true).push('"');
-              } else {
-                buffer.push(' ', me.attributeTransform[attr] || attr, '\x3d"', val, '"');
-              }
+      }
+    } else {
+      tag = spec.tag || 'div';
+      buffer.push('\x3c', tag);
+      for (attr in spec) {
+        if (spec.hasOwnProperty(attr)) {
+          val = spec[attr];
+          if (val !== undefined && !me.confRe.test(attr)) {
+            if (val && val.join) {
+              val = val.join(' ');
+            }
+            if (typeof val === 'object') {
+              buffer.push(' ', attr, '\x3d"');
+              me.generateStyles(val, buffer, true).push('"');
+            } else {
+              buffer.push(' ', me.attributeTransform[attr] || attr, '\x3d"', val, '"');
             }
           }
         }
-        if (me.emptyTags.test(tag)) {
-          buffer.push('/\x3e');
-        } else {
-          buffer.push('\x3e');
-          if (val = spec.tpl) {
-            val.applyOut(spec.tplData, buffer);
-          }
-          if (val = spec.html) {
-            buffer.push(val);
-          }
-          if (val = spec.cn || spec.children) {
-            me.generateMarkup(val, buffer);
-          }
-          closeTags = me.closeTags;
-          buffer.push(closeTags[tag] || (closeTags[tag] = '\x3c/' + tag + '\x3e'));
+      }
+      if (me.emptyTags.test(tag)) {
+        buffer.push('/\x3e');
+      } else {
+        buffer.push('\x3e');
+        if (val = spec.tpl) {
+          val.applyOut(spec.tplData, buffer);
         }
+        if (val = spec.html) {
+          buffer.push(val);
+        }
+        if (val = spec.cn || spec.children) {
+          me.generateMarkup(val, buffer);
+        }
+        closeTags = me.closeTags;
+        buffer.push(closeTags[tag] || (closeTags[tag] = '\x3c/' + tag + '\x3e'));
       }
     }
     return buffer;
@@ -44818,12 +44446,10 @@ Ext.define('Ext.dom.Helper', function() {
       }
       if (bb_ae_PositionHash[where]) {
         el.parentNode.insertBefore(newNode, where === beforebegin ? el : el.nextSibling);
+      } else if (el.firstChild && where === afterbegin) {
+        el.insertBefore(newNode, el.firstChild);
       } else {
-        if (el.firstChild && where === afterbegin) {
-          el.insertBefore(newNode, el.firstChild);
-        } else {
-          el.appendChild(newNode);
-        }
+        el.appendChild(newNode);
       }
     }
     return returnElement ? Ext.get(newNode) : newNode;
@@ -44920,10 +44546,8 @@ Ext.define('Ext.util.TaskRunner', {fireIdleEvent:null, interval:10, timerId:null
   var me = this;
   if (typeof interval === 'number') {
     me.interval = interval;
-  } else {
-    if (interval) {
-      Ext.apply(me, interval);
-    }
+  } else if (interval) {
+    Ext.apply(me, interval);
   }
   me.tasks = [];
   me.timerFn = me.onTick.bind(me);
@@ -44931,7 +44555,7 @@ Ext.define('Ext.util.TaskRunner', {fireIdleEvent:null, interval:10, timerId:null
   var task = new Ext.util.TaskRunner.Task(config);
   task.manager = this;
   if (Ext.Timer.track) {
-    task.creator = (new Error).stack;
+    task.creator = (new Error()).stack;
   }
   return task;
 }, start:function(task) {
@@ -45134,7 +44758,7 @@ Ext.define('Ext.dom.Fly', {extend:Ext.dom.Element, alternateClassName:'Ext.dom.E
           if (named === 'constructor') {
             named = '$constructor';
           }
-          fly = flyweights[named] || (flyweights[named] = new Fly);
+          fly = flyweights[named] || (flyweights[named] = new Fly());
           fly.dom = dom;
           data = fly.peekData();
           if (data) {
@@ -45170,7 +44794,7 @@ Ext.define('Ext.dom.CompositeElementLite', {alternateClassName:['Ext.CompositeEl
     this.add(elements);
   }
 }, getElement:function(el) {
-  var fly = this._fly || (this._fly = new Ext.dom.Fly);
+  var fly = this._fly || (this._fly = new Ext.dom.Fly());
   return fly.attach(el);
 }, transformElement:function(el) {
   return Ext.getDom(el);
@@ -45183,14 +44807,10 @@ Ext.define('Ext.dom.CompositeElementLite', {alternateClassName:['Ext.CompositeEl
   }
   if (typeof els === 'string') {
     els = Ext.fly(root || document).query(els);
-  } else {
-    if (els.isComposite) {
-      els = els.elements;
-    } else {
-      if (!Ext.isIterable(els)) {
-        els = [els];
-      }
-    }
+  } else if (els.isComposite) {
+    els = els.elements;
+  } else if (!Ext.isIterable(els)) {
+    els = [els];
   }
   for (i = 0, ln = els.length; i < ln; ++i) {
     elements.push(this.transformElement(els[i]));
@@ -45400,10 +45020,8 @@ pinchZoom:true, doubleTapZoom:true}, {panX:true, panY:true, pinchZoom:true, doub
   var me = this, supports = Ext.supports;
   if (supports.TouchAction) {
     me.cssProp = 'touch-action';
-  } else {
-    if (supports.MSPointerEvents) {
-      me.cssProp = '-ms-touch-action';
-    }
+  } else if (supports.MSPointerEvents) {
+    me.cssProp = '-ms-touch-action';
   }
   if (supports.TouchEvents) {
     Ext.getWin().on({touchstart:'onTouchStart', touchmove:'onTouchMove', touchend:'onTouchEnd', scope:me, delegated:false, translate:false, capture:true, priority:5000});
@@ -45523,31 +45141,23 @@ pinchZoom:true, doubleTapZoom:true}, {panX:true, panY:true, pinchZoom:true, doub
       flags = me.lookupFlags(dom);
       if (flags & 0) {
         prevent = true;
-      } else {
-        if (touchCount === 1) {
-          panX = !!(flags & 1);
-          panY = !!(flags & 2);
-          if (panX && panY) {
-            prevent = false;
-          } else {
-            if (!panX && !panY) {
-              prevent = true;
-            } else {
-              if (distance >= me.minMoveDistance) {
-                prevent = !!(panX && isVertical || panY && !isVertical);
-              }
-            }
-          }
-          if (!prevent && me.isScrollable(dom, isVertical, (isVertical ? deltaY : deltaX) < 0)) {
-            break;
-          }
-        } else {
-          if (me.containsTargets(dom, e)) {
-            prevent = !(flags & 4);
-          } else {
-            prevent = false;
-          }
+      } else if (touchCount === 1) {
+        panX = !!(flags & 1);
+        panY = !!(flags & 2);
+        if (panX && panY) {
+          prevent = false;
+        } else if (!panX && !panY) {
+          prevent = true;
+        } else if (distance >= me.minMoveDistance) {
+          prevent = !!(panX && isVertical || panY && !isVertical);
         }
+        if (!prevent && me.isScrollable(dom, isVertical, (isVertical ? deltaY : deltaX) < 0)) {
+          break;
+        }
+      } else if (me.containsTargets(dom, e)) {
+        prevent = !(flags & 4);
+      } else {
+        prevent = false;
       }
       if (prevent) {
         break;
@@ -45557,10 +45167,8 @@ pinchZoom:true, doubleTapZoom:true}, {panX:true, panY:true, pinchZoom:true, doub
   }
   if (touchCount === 1) {
     me.preventSingle = prevent;
-  } else {
-    if (touchCount > 1) {
-      me.preventMulti = prevent;
-    }
+  } else if (touchCount > 1) {
+    me.preventMulti = prevent;
   }
   if (prevent) {
     e.preventDefault();
@@ -45675,12 +45283,10 @@ Ext.define('Ext.drag.Constraint', {alias:'drag.constraint.base', mixins:[Ext.mix
   if (!(aNull && bNull)) {
     if (aNull) {
       val = b;
+    } else if (bNull) {
+      val = a;
     } else {
-      if (bNull) {
-        val = a;
-      } else {
-        val = resolver(a, b);
-      }
+      val = resolver(a, b);
     }
   }
   return val;
@@ -45790,7 +45396,7 @@ Ext.define('Ext.drag.Info', {constructor:function(source, e) {
   Ext.Array.remove(this.types, type);
   delete this.data[type];
 }, clone:function() {
-  var me = this, ret = new Ext.drag.Info;
+  var me = this, ret = new Ext.drag.Info();
   ret.cursor = Ext.merge({}, me.cursor);
   ret.data = Ext.apply({}, me.data);
   ret.element = Ext.merge({}, me.element);
@@ -45926,12 +45532,10 @@ Ext.define('Ext.drag.Item', {mixins:[Ext.mixin.Observable, Ext.mixin.Identifiabl
   var el;
   if (comp) {
     el = comp.el;
+  } else if (was && was.el === this.getElement()) {
+    el = null;
   } else {
-    if (was && was.el === this.getElement()) {
-      el = null;
-    } else {
-      return;
-    }
+    return;
   }
   this.setElement(el);
 }, applyElement:function(element) {
@@ -46010,7 +45614,7 @@ Ext.define('Ext.drag.Manager', {singleton:true, dragCls:Ext.baseCSSPrefix + 'dra
 }, getNativeDragInfo:function(e) {
   var info = this.nativeDragInfo;
   if (!info) {
-    this.nativeDragInfo = info = new Ext.drag.Info;
+    this.nativeDragInfo = info = new Ext.drag.Info();
     info.isNative = true;
   }
   return info;
@@ -46035,13 +45639,11 @@ Ext.define('Ext.drag.Manager', {singleton:true, dragCls:Ext.baseCSSPrefix + 'dra
       targetGroups = target.getGroups();
       if (!groupMap && !targetGroups) {
         groupOk = true;
-      } else {
-        if (groupMap && targetGroups) {
-          for (i = 0, len = targetGroups.length; i < len; ++i) {
-            if (groupMap[targetGroups[i]]) {
-              groupOk = true;
-              break;
-            }
+      } else if (groupMap && targetGroups) {
+        for (i = 0, len = targetGroups.length; i < len; ++i) {
+          if (groupMap[targetGroups[i]]) {
+            groupOk = true;
+            break;
           }
         }
       }
@@ -46118,10 +45720,8 @@ Ext.define('Ext.drag.Source', {extend:Ext.drag.Item, defaultIdPrefix:'source-', 
   if (constrain && !constrain.$isClass) {
     if (constrain.isRegion) {
       constrain = {region:constrain};
-    } else {
-      if (constrain.isElement || !Ext.isObject(constrain)) {
-        constrain = {element:constrain};
-      }
+    } else if (constrain.isElement || !Ext.isObject(constrain)) {
+      constrain = {element:constrain};
     }
     constrain = Ext.apply({source:this}, constrain);
     constrain = Ext.Factory.dragConstraint(constrain);
@@ -46656,10 +46256,8 @@ Ext.define('Ext.event.gesture.Drag', {extend:Ext.event.gesture.SingleTouch, prio
   info[axis] = value;
   if (value > previousValue) {
     direction[axis] = 1;
-  } else {
-    if (value < previousValue) {
-      direction[axis] = -1;
-    }
+  } else if (value < previousValue) {
+    direction[axis] = -1;
   }
   info['start' + capAxis] = startValue;
   info['previous' + capAxis] = info.previous[axis];
@@ -46728,11 +46326,9 @@ Ext.define('Ext.event.gesture.Swipe', {extend:Ext.event.gesture.SingleTouch, pri
     if (me.isHorizontal && absDeltaX < minDistance) {
       direction = deltaX < 0 ? 'left' : 'right';
       distance = absDeltaX;
-    } else {
-      if (me.isVertical && absDeltaY < minDistance) {
-        direction = deltaY < 0 ? 'up' : 'down';
-        distance = absDeltaY;
-      }
+    } else if (me.isVertical && absDeltaY < minDistance) {
+      direction = deltaY < 0 ? 'up' : 'down';
+      distance = absDeltaY;
     }
   }
   if (!me.isHorizontal && !me.isVertical) {
@@ -46763,11 +46359,9 @@ Ext.define('Ext.event.gesture.Swipe', {extend:Ext.event.gesture.SingleTouch, pri
     if (me.isHorizontal) {
       direction = deltaX < 0 ? 'left' : 'right';
       distance = absDeltaX;
-    } else {
-      if (me.isVertical) {
-        direction = deltaY < 0 ? 'up' : 'down';
-        distance = absDeltaY;
-      }
+    } else if (me.isVertical) {
+      direction = deltaY < 0 ? 'up' : 'down';
+      distance = absDeltaY;
     }
     me.fire('swipe', e, {touch:touch, direction:direction, distance:distance, duration:duration});
   }
@@ -46811,19 +46405,15 @@ Ext.define('Ext.event.gesture.EdgeSwipe', {extend:Ext.event.gesture.Swipe, prior
   if (me.isHorizontal) {
     direction = deltaX < 0 ? 'left' : 'right';
     distance = deltaX;
-  } else {
-    if (me.isVertical) {
-      direction = deltaY < 0 ? 'up' : 'down';
-      distance = deltaY;
-    }
+  } else if (me.isVertical) {
+    direction = deltaY < 0 ? 'up' : 'down';
+    distance = deltaY;
   }
   direction = me.direction || (me.direction = direction);
   if (direction === 'up') {
     distance = deltaY * -1;
-  } else {
-    if (direction === 'left') {
-      distance = deltaX * -1;
-    }
+  } else if (direction === 'left') {
+    distance = deltaX * -1;
   }
   me.distance = distance;
   if (!distance) {
@@ -46893,10 +46483,8 @@ Ext.define('Ext.event.gesture.MultiTouch', {extend:Ext.event.gesture.Recognizer,
   var me = this, requiredTouchesCount = me.requiredTouchesCount, touches = e.touches, touchesCount = touches.length;
   if (touchesCount === requiredTouchesCount) {
     me.isTracking = true;
-  } else {
-    if (touchesCount > requiredTouchesCount) {
-      return me.cancel(e);
-    }
+  } else if (touchesCount > requiredTouchesCount) {
+    return me.cancel(e);
   }
 }, reset:function() {
   this.isTracking = false;
@@ -46949,10 +46537,8 @@ Ext.define('Ext.event.gesture.Rotate', {extend:Ext.event.gesture.MultiTouch, pri
       previousAngle = angle - 360;
       if (Math.abs(nextAngle - lastAngle) < diff) {
         angle = nextAngle;
-      } else {
-        if (Math.abs(previousAngle - lastAngle) < diff) {
-          angle = previousAngle;
-        }
+      } else if (Math.abs(previousAngle - lastAngle) < diff) {
+        angle = previousAngle;
       }
     }
     me.lastAngle = angle;
@@ -47070,8 +46656,8 @@ Ext.define('Ext.event.publisher.Focus', {extend:Ext.event.publisher.Dom, type:'f
   return event;
 }}, function(Focus) {
   var focusTimeout;
-  Focus.prototype.focusFly = new Ext.dom.Fly;
-  Focus.instance = new Focus;
+  Focus.prototype.focusFly = new Ext.dom.Fly();
+  Focus.instance = new Focus();
   if (!Ext.supports.FocusinFocusoutEvents) {
     this.override({handledDomEvents:['focus', 'blur'], publishDelegatedDomEvent:function(e) {
       var me = this, targetIsElement;
@@ -47211,53 +46797,45 @@ customProperties:{x:true, y:true}, formattedNameCache:{'x':'left', 'y':'top'}, t
       }
     }
     return value;
-  } else {
-    if (type === 'number') {
-      if (value === 0) {
-        return '0';
-      }
-      if (this.lengthProperties[name]) {
-        value = value + defaultLengthUnit;
-        if (isCustom) {
-          value = this.getCustomValue(value, name);
-        }
-        return value;
-      }
-      if (this.angleProperties[name]) {
-        return value + this.DEFAULT_UNIT_ANGLE;
-      }
-      if (this.durationProperties[name]) {
-        return value + this.DEFAULT_UNIT_DURATION;
-      }
-    } else {
-      if (name === 'transform') {
-        transformMethods = this.transformMethods;
-        transformValues = [];
-        for (i = 0, ln = transformMethods.length; i < ln; i++) {
-          method = transformMethods[i];
-          transformValues.push(method + '(' + this.formatValue(value[method], method) + ')');
-        }
-        return transformValues.join(' ');
-      } else {
-        if (Ext.isArray(value)) {
-          values = [];
-          for (i = 0, ln = value.length; i < ln; i++) {
-            values.push(this.formatValue(value[i], name));
-          }
-          return values.length > 0 ? values.join(', ') : 'none';
-        }
-      }
+  } else if (type === 'number') {
+    if (value === 0) {
+      return '0';
     }
+    if (this.lengthProperties[name]) {
+      value = value + defaultLengthUnit;
+      if (isCustom) {
+        value = this.getCustomValue(value, name);
+      }
+      return value;
+    }
+    if (this.angleProperties[name]) {
+      return value + this.DEFAULT_UNIT_ANGLE;
+    }
+    if (this.durationProperties[name]) {
+      return value + this.DEFAULT_UNIT_DURATION;
+    }
+  } else if (name === 'transform') {
+    transformMethods = this.transformMethods;
+    transformValues = [];
+    for (i = 0, ln = transformMethods.length; i < ln; i++) {
+      method = transformMethods[i];
+      transformValues.push(method + '(' + this.formatValue(value[method], method) + ')');
+    }
+    return transformValues.join(' ');
+  } else if (Ext.isArray(value)) {
+    values = [];
+    for (i = 0, ln = value.length; i < ln; i++) {
+      values.push(this.formatValue(value[i], name));
+    }
+    return values.length > 0 ? values.join(', ') : 'none';
   }
   return value;
 }, getCustomValue:function(value, name) {
   var el = Ext.fly(this.activeElement);
   if (name === 'x') {
     value = el.translateXY(parseInt(value, 10)).x;
-  } else {
-    if (name === 'y') {
-      value = el.translateXY(null, parseInt(value, 10)).y;
-    }
+  } else if (name === 'y') {
+    value = el.translateXY(null, parseInt(value, 10)).y;
   }
   return value + this.DEFAULT_UNIT_LENGTH;
 }});
@@ -47732,11 +47310,9 @@ Ext.define('Ext.mixin.ConfigProxy', function(ConfigProxy) {
     if (proxied) {
       if (!itemConfig) {
         ret = proxied;
-      } else {
-        if (itemConfig.constructor === Object) {
-          configurator = me.self.getConfigurator();
-          ret = configurator.merge(me, Ext.clone(itemConfig), proxied);
-        }
+      } else if (itemConfig.constructor === Object) {
+        configurator = me.self.getConfigurator();
+        ret = configurator.merge(me, Ext.clone(itemConfig), proxied);
       }
     }
     if (alwaysClone && ret === itemConfig) {
@@ -47846,12 +47422,10 @@ Ext.define('Ext.mixin.StoreWatcher', {mixinId:'storewatcher', config:{dataSource
   var store = this.getStore(), source;
   if (!store) {
     source = null;
+  } else if (store.getDataSource) {
+    source = store.getDataSource();
   } else {
-    if (store.getDataSource) {
-      source = store.getDataSource();
-    } else {
-      source = store.getData();
-    }
+    source = store.getData();
   }
   this.setDataSource(source);
 }, syncListeners:function(instance, token, listeners) {
@@ -48047,10 +47621,8 @@ Ext.define('Ext.util.ClickRepeater', {alternateClassName:'Ext.util.TapRepeater',
   if (disabled) {
     me.savedEl = me.getEl();
     me.setEl(null);
-  } else {
-    if (me.savedEl) {
-      me.setEl(me.savedEl);
-    }
+  } else if (me.savedEl) {
+    me.setEl(me.savedEl);
   }
 }, updateTarget:function(target) {
   this.setEl(target.el);
@@ -48188,11 +47760,9 @@ Ext.define('Ext.util.Spans', {isSpans:true, constructor:function() {
   var spans = this.spans, index = this.bisect(begin), ret = false, e, span;
   if (index && begin < (e = spans[index - 1][1])) {
     ret = end <= e;
-  } else {
-    if (index < spans.length) {
-      span = spans[index];
-      ret = span[0] <= begin && end <= span[1];
-    }
+  } else if (index < spans.length) {
+    span = spans[index];
+    ret = span[0] <= begin && end <= span[1];
   }
   return ret;
 }, each:function(fn, scope) {
@@ -48217,10 +47787,8 @@ Ext.define('Ext.util.Spans', {isSpans:true, constructor:function() {
   var spans = this.spans, index = this.bisect(begin), ret = false;
   if (index && begin < spans[index - 1][1]) {
     ret = true;
-  } else {
-    if (index < spans.length) {
-      ret = spans[index][0] < end;
-    }
+  } else if (index < spans.length) {
+    ret = spans[index][0] < end;
   }
   return ret;
 }, remove:function(begin, end) {
@@ -48297,7 +47865,7 @@ Ext.define('Ext.util.TextMetrics', {statics:{shared:null, measure:function(el, t
   measure.setHtml('');
   return size;
 }, bind:function(el) {
-  this.measure.setStyle((this.el || (this.self.prototype.el = new Ext.dom.Fly)).attach(el).getStyle(['font-size', 'font-size-adjust', 'font-style', 'font-weight', 'font-family', 'font-kerning', 'font-stretch', 'line-height', 'text-transform', 'text-decoration', 'letter-spacing', 'word-break']));
+  this.measure.setStyle((this.el || (this.self.prototype.el = new Ext.dom.Fly())).attach(el).getStyle(['font-size', 'font-size-adjust', 'font-style', 'font-weight', 'font-family', 'font-kerning', 'font-stretch', 'line-height', 'text-transform', 'text-decoration', 'letter-spacing', 'word-break']));
 }, setFixedWidth:function(width) {
   this.measure.setWidth(width);
 }, getWidth:function(text) {
@@ -48443,10 +48011,8 @@ listeners:{click:'onClick'}}, focusable:true, focusEl:'buttonElement', ariaEl:'b
   if (oldMenu && !oldMenu.destroyed) {
     if (this.getDestroyMenu()) {
       oldMenu.destroy();
-    } else {
-      if (oldMenu.isMenu) {
-        oldMenu.un(listener);
-      }
+    } else if (oldMenu.isMenu) {
+      oldMenu.un(listener);
     }
   }
   this.toggleCls(this.hasMenuCls, !!menu);
@@ -48594,12 +48160,10 @@ listeners:{click:'onClick'}}, focusable:true, focusEl:'buttonElement', ariaEl:'b
         if (!pressed) {
           me.setPressed(true);
         }
+      } else if (menu.isViewportMenu) {
+        menu.setDisplayed(!menu.getDisplayed());
       } else {
-        if (menu.isViewportMenu) {
-          menu.setDisplayed(!menu.getDisplayed());
-        } else {
-          menu.show();
-        }
+        menu.show();
       }
     }
   }
@@ -48672,10 +48236,8 @@ Ext.define('Ext.layout.Box', {extend:Ext.layout.Auto, alias:'layout.box', isBox:
     if (config.vertical == null) {
       if (type === 'vbox') {
         config.vertical = true;
-      } else {
-        if (type === 'hbox') {
-          config.vertical = false;
-        }
+      } else if (type === 'hbox') {
+        config.vertical = false;
       }
     }
     this.callParent([config, options]);
@@ -48744,13 +48306,11 @@ Ext.define('Ext.layout.Box', {extend:Ext.layout.Auto, alias:'layout.box', isBox:
     if (isNumber) {
       grow = flex;
       flex = flex + ' ' + flex;
-    } else {
-      if (isString) {
-        parts = Ext.String.splitWords(flex);
-        grow = parts[0];
-        if (parts.length === 1) {
-          flex = grow + ' ' + grow;
-        }
+    } else if (isString) {
+      parts = Ext.String.splitWords(flex);
+      grow = parts[0];
+      if (parts.length === 1) {
+        flex = grow + ' ' + grow;
       }
     }
     el.setStyle('flex', flex);
@@ -48802,14 +48362,10 @@ Ext.define('Ext.layout.Box', {extend:Ext.layout.Auto, alias:'layout.box', isBox:
   if (scroll === 'min') {
     if (!oversized && itemInfo.start < targetInfo.start || oversized && itemInfo.start > targetInfo.start) {
       delta = itemInfo.start - targetInfo.start;
-    } else {
-      if (!oversized && itemInfo.end > targetInfo.end || oversized && itemInfo.end < targetInfo.end) {
-        delta = itemInfo.end - targetInfo.end;
-      } else {
-        if (oversized && itemInfo.start < targetInfo.start && itemInfo.end > targetInfo.end) {
-          delta = itemInfo.start - targetInfo.start;
-        }
-      }
+    } else if (!oversized && itemInfo.end > targetInfo.end || oversized && itemInfo.end < targetInfo.end) {
+      delta = itemInfo.end - targetInfo.end;
+    } else if (oversized && itemInfo.start < targetInfo.start && itemInfo.end > targetInfo.end) {
+      delta = itemInfo.start - targetInfo.start;
     }
   } else {
     if (itemInfo.start < targetInfo.start) {
@@ -48886,10 +48442,8 @@ Ext.define('Ext.layout.Box', {extend:Ext.layout.Auto, alias:'layout.box', isBox:
   b = b.el[fn]();
   if (a < b) {
     return -1;
-  } else {
-    if (b < a) {
-      return 1;
-    }
+  } else if (b < a) {
+    return 1;
   }
   return 0;
 }}});
@@ -48928,10 +48482,8 @@ Ext.define('Ext.Toolbar', {extend:Ext.Container, xtype:'toolbar', isToolbar:true
       if (item.getDefaultUI() == null) {
         item.setDefaultUI(defaultButtonUI);
       }
-    } else {
-      if (item.isButton && item.getUi() == null) {
-        item.setUi(defaultButtonUI);
-      }
+    } else if (item.isButton && item.getUi() == null) {
+      item.setUi(defaultButtonUI);
     }
   }
   this.callParent([item, index]);
@@ -48968,10 +48520,8 @@ Ext.define('Ext.panel.Buttons', function() {
             if (!Ext.Toolbar.shortcuts[button]) {
               button = Ext.applyIf({itemId:button, text:button}, buttonDefaults);
             }
-          } else {
-            if (buttonDefaults) {
-              button = Ext.apply({}, button, buttonDefaults);
-            }
+          } else if (buttonDefaults) {
+            button = Ext.apply({}, button, buttonDefaults);
           }
           array[i] = button;
         }
@@ -48982,10 +48532,8 @@ Ext.define('Ext.panel.Buttons', function() {
           defaults = standardButtons[button.itemId];
           if (defaults) {
             Ext.applyIf(button, defaults);
-          } else {
-            if (handler) {
-              Ext.raise('Button handler short-hand is only valid for standardButtons');
-            }
+          } else if (handler) {
+            Ext.raise('Button handler short-hand is only valid for standardButtons');
           }
           if (handler) {
             delete button.xxx;
@@ -49015,10 +48563,8 @@ Ext.define('Ext.panel.Buttons', function() {
     isComponent = toolbar.isComponent;
     if (Ext.isArray(toolbar)) {
       toolbar = {xtype:'toolbar', items:toolbar};
-    } else {
-      if (!isComponent) {
-        toolbar = Ext.clone(toolbar);
-      }
+    } else if (!isComponent) {
+      toolbar = Ext.clone(toolbar);
     }
     if (!isComponent) {
       toolbar.$initParent = me;
@@ -49029,10 +48575,8 @@ Ext.define('Ext.panel.Buttons', function() {
     }
     if (isComponent) {
       toolbar.setDocked(docked);
-    } else {
-      if (docked) {
-        toolbar.docked = docked;
-      }
+    } else if (docked) {
+      toolbar.docked = docked;
     }
     if (disableFocusableContainer) {
       if (isComponent) {
@@ -49268,19 +48812,13 @@ Ext.define('Ext.mixin.Toolable', {mixinId:'toolable', config:{defaultToolWeights
     if (zoneName === 'head') {
       zone.insertBefore(anchorElement);
       anchorElement.addCls(me._headedCls);
-    } else {
-      if (zoneName === 'tail') {
-        zone.insertAfter(anchorElement);
-        anchorElement.addCls(me._tailedCls);
-      } else {
-        if (zoneName === 'start') {
-          zone.insertBefore(me._headZone || anchorElement);
-        } else {
-          if (zoneName === 'end') {
-            zone.insertAfter(me._tailZone || anchorElement);
-          }
-        }
-      }
+    } else if (zoneName === 'tail') {
+      zone.insertAfter(anchorElement);
+      anchorElement.addCls(me._tailedCls);
+    } else if (zoneName === 'start') {
+      zone.insertBefore(me._headZone || anchorElement);
+    } else if (zoneName === 'end') {
+      zone.insertAfter(me._tailZone || anchorElement);
     }
     me[zonePropName] = zone;
     me.hasToolZones = true;
@@ -49431,11 +48969,9 @@ template:[{reference:'bodyWrapElement', cls:Ext.baseCSSPrefix + 'body-wrap-el', 
       anchor.dom.appendChild(svgEl);
     }
     el.style.overflow = 'visible';
-  } else {
-    if (oldAnchor) {
-      me.anchorSize = oldAnchor.destroy();
-      el.style.overflow = '';
-    }
+  } else if (oldAnchor) {
+    me.anchorSize = oldAnchor.destroy();
+    el.style.overflow = '';
   }
   return anchor;
 }, initAnchor:function() {
@@ -49594,10 +49130,8 @@ template:[{reference:'bodyWrapElement', cls:Ext.baseCSSPrefix + 'body-wrap-el', 
       me.setAnchorPosition(null);
     }
     me.setCurrentAlignmentInfo(alignmentInfo);
-  } else {
-    if (anchorElement) {
-      anchorElement.show();
-    }
+  } else if (anchorElement) {
+    anchorElement.show();
   }
   if (!me.viewportResizeListener) {
     me.viewportResizeListener = Ext.on({resize:'onViewportResize', scope:me, destroyable:true});
@@ -49718,10 +49252,8 @@ floated:true, isInputRegex:/^(input|textarea|select|a)$/i, destroy:function() {
   if (anim) {
     if (exit === 'bottom') {
       direction = 'down';
-    } else {
-      if (exit === 'top') {
-        direction = 'up';
-      }
+    } else if (exit === 'top') {
+      direction = 'up';
     }
     anim.setDirection(direction);
   }
@@ -49924,10 +49456,8 @@ cls:Ext.baseCSSPrefix + 'arrow-el ' + Ext.baseCSSPrefix + 'font-icon'}]}], ariaE
       me.separatorElement = separatorElement = Ext.Element.create({cls:Ext.baseCSSPrefix + 'menuseparator'});
       me.el.dom.insertBefore(separatorElement.dom, me.el.dom.firstChild);
     }
-  } else {
-    if (separatorElement) {
-      separatorElement.hide();
-    }
+  } else if (separatorElement) {
+    separatorElement.hide();
   }
 }, privates:{handleTouch:function() {
   var me = this, linkEl = me.bodyElement;
@@ -49986,10 +49516,8 @@ cls:Ext.baseCSSPrefix + 'arrow-el ' + Ext.baseCSSPrefix + 'font-icon'}]}], ariaE
   if (me.hasIcon()) {
     if (iconAlign === 'left') {
       me.replaceCls(rightCls, leftCls);
-    } else {
-      if (iconAlign === 'right') {
-        me.replaceCls(leftCls, rightCls);
-      }
+    } else if (iconAlign === 'right') {
+      me.replaceCls(leftCls, rightCls);
     }
   } else {
     me.removeCls([leftCls, rightCls]);
@@ -50160,10 +49688,8 @@ Ext.define('Ext.menu.Menu', {extend:Ext.Panel, xtype:'menu', isMenu:true, config
   if (!item.isComponent && !item.xtype && !item.xclass) {
     if (item.group || item.name) {
       item.xtype = 'menuradioitem';
-    } else {
-      if ('checked' in item) {
-        item.xtype = 'menucheckitem';
-      }
+    } else if ('checked' in item) {
+      item.xtype = 'menucheckitem';
     }
   }
   return item;
@@ -50192,20 +49718,18 @@ Ext.define('Ext.menu.Menu', {extend:Ext.Panel, xtype:'menu', isMenu:true, config
     e.preventDefault();
     item = this.getItemFromEvent(e);
     e.target = item && item.focusEl.dom;
-  } else {
-    if (keyCode === e.TAB && Ext.fly(e.target).is('input[type\x3dtext],textarea')) {
-      e.preventDefault();
-      item = this.getItemFromEvent(e);
-      e.target = item && item.focusEl.dom;
-      if (e.shiftKey) {
-        e.shiftKey = false;
-        e.keyCode = e.UP;
-      } else {
-        e.keyCode = e.DOWN;
-      }
+  } else if (keyCode === e.TAB && Ext.fly(e.target).is('input[type\x3dtext],textarea')) {
+    e.preventDefault();
+    item = this.getItemFromEvent(e);
+    e.target = item && item.focusEl.dom;
+    if (e.shiftKey) {
+      e.shiftKey = false;
+      e.keyCode = e.UP;
     } else {
-      return this.callParent([e]);
+      e.keyCode = e.DOWN;
     }
+  } else {
+    return this.callParent([e]);
   }
   return e;
 }, onEscKey:function(e) {
@@ -50361,18 +49885,16 @@ modal:true, shadow:true, headerCls:Ext.baseCSSPrefix + 'dialogheader', titleCls:
       if (handler) {
         Ext.callback(handler, null, [me, event], 0, me);
         done = true;
-      } else {
-        if (actions && buttons) {
-          if (typeof actions === 'string') {
-            actions = [actions];
-          }
-          for (i = 0, n = actions.length; i < n; ++i) {
-            action = buttons.getComponent(actions[i]);
-            if (action && action.isButton) {
-              action.onTap(event);
-              done = true;
-              break;
-            }
+      } else if (actions && buttons) {
+        if (typeof actions === 'string') {
+          actions = [actions];
+        }
+        for (i = 0, n = actions.length; i < n; ++i) {
+          action = buttons.getComponent(actions[i]);
+          if (action && action.isButton) {
+            action.onTap(event);
+            done = true;
+            break;
           }
         }
       }
@@ -50569,7 +50091,7 @@ modal:true, shadow:true, headerCls:Ext.baseCSSPrefix + 'dialogheader', titleCls:
     }
   }
 }, privates:{draggableCls:Ext.baseCSSPrefix + 'draggable', needsCenter:false, maximizedCls:Ext.baseCSSPrefix + 'maximized', animateMaximizeRestore:function(before, after, anim, callback) {
-  var me = this, pending = new Ext.Deferred, proxy = me.getMaximizeProxy(), a = Ext.merge({from:{width:before.w + 'px', height:before.h + 'px', transform:{translateX:before.x + 'px', translateY:before.y + 'px'}}, to:{width:after.w + 'px', height:after.h + 'px', transform:{translateX:after.x + 'px', translateY:after.y + 'px'}}}, anim);
+  var me = this, pending = new Ext.Deferred(), proxy = me.getMaximizeProxy(), a = Ext.merge({from:{width:before.w + 'px', height:before.h + 'px', transform:{translateX:before.x + 'px', translateY:before.y + 'px'}}, to:{width:after.w + 'px', height:after.h + 'px', transform:{translateX:after.x + 'px', translateY:after.y + 'px'}}}, anim);
   proxy = me.createMaximizeProxy(proxy);
   proxy = new me.self(proxy);
   proxy.show();
@@ -50623,10 +50145,8 @@ Ext.define('Ext.field.Dirty', {extend:Ext.Mixin, mixinConfig:{id:'dirtyfield', a
     if (childDirtyState.ready) {
       childDirtyState.counter += dirty ? 1 : -1;
       me.setDirty(!!childDirtyState.counter);
-    } else {
-      if (dirty) {
-        ++childDirtyState.counter;
-      }
+    } else if (dirty) {
+      ++childDirtyState.counter;
     }
   }
 }, beginSyncChildDirty:function() {
@@ -50635,10 +50155,8 @@ Ext.define('Ext.field.Dirty', {extend:Ext.Mixin, mixinConfig:{id:'dirtyfield', a
   var me = this, childDirtyState = me._childDirtyState, dirty = !!childDirtyState.counter;
   if (dirty !== me.dirty) {
     me.setDirty(dirty);
-  } else {
-    if (dirty) {
-      me.informParentDirty(dirty);
-    }
+  } else if (dirty) {
+    me.informParentDirty(dirty);
   }
   childDirtyState.ready = true;
 }, fireDirtyChange:function() {
@@ -50758,24 +50276,16 @@ validateDisabled:null, autoFitErrors:null, inline:null, error:null, errorMessage
     me.removeCls(Ext.baseCSSPrefix + 'error-target-' + oldTarget);
     if (oldTarget === 'qtip') {
       me.setTipError(null);
-    } else {
-      if (oldTarget === 'title') {
-        me.setTitleError(null);
-      } else {
-        if (oldTarget === 'side') {
-          me.setSideError(null);
-        } else {
-          if (oldTarget === 'under') {
-            me.setUnderError(null);
-          } else {
-            if (oldTarget === 'parent') {
-              owner = me.up('[onFieldErrorChange]');
-              if (owner) {
-                owner.onFieldErrorChange(me);
-              }
-            }
-          }
-        }
+    } else if (oldTarget === 'title') {
+      me.setTitleError(null);
+    } else if (oldTarget === 'side') {
+      me.setSideError(null);
+    } else if (oldTarget === 'under') {
+      me.setUnderError(null);
+    } else if (oldTarget === 'parent') {
+      owner = me.up('[onFieldErrorChange]');
+      if (owner) {
+        owner.onFieldErrorChange(me);
       }
     }
   }
@@ -50786,24 +50296,16 @@ validateDisabled:null, autoFitErrors:null, inline:null, error:null, errorMessage
       if (error) {
         if (target === 'qtip') {
           me.setTipError(error);
-        } else {
-          if (target === 'title') {
-            me.setTitleError(error);
-          } else {
-            if (target === 'side') {
-              me.setSideError(error);
-            } else {
-              if (target === 'under') {
-                me.setUnderError(error);
-              } else {
-                if (target === 'parent') {
-                  owner = me.up('[onFieldErrorChange]');
-                  if (owner) {
-                    owner.onFieldErrorChange(me, error);
-                  }
-                }
-              }
-            }
+        } else if (target === 'title') {
+          me.setTitleError(error);
+        } else if (target === 'side') {
+          me.setSideError(error);
+        } else if (target === 'under') {
+          me.setUnderError(error);
+        } else if (target === 'parent') {
+          owner = me.up('[onFieldErrorChange]');
+          if (owner) {
+            owner.onFieldErrorChange(me, error);
           }
         }
       }
@@ -50973,20 +50475,18 @@ validateDisabled:null, autoFitErrors:null, inline:null, error:null, errorMessage
     }
     if (empty && me.getRequired()) {
       errors.push(me.getRequiredMessage());
-    } else {
+    } else if (!errors.length) {
+      if (!empty) {
+        value = me.parseValue(value, errors);
+      }
       if (!errors.length) {
-        if (!empty) {
-          value = me.parseValue(value, errors);
+        field = me._validationField;
+        record = me._validationRecord;
+        if (field && record) {
+          field.validate(value, null, errors, record);
         }
-        if (!errors.length) {
-          field = me._validationField;
-          record = me._validationRecord;
-          if (field && record) {
-            field.validate(value, null, errors, record);
-          }
-          if (!empty) {
-            me.doValidate(value, errors, skipLazy);
-          }
+        if (!empty) {
+          me.doValidate(value, errors, skipLazy);
         }
       }
     }
@@ -51082,16 +50582,12 @@ validateDisabled:null, autoFitErrors:null, inline:null, error:null, errorMessage
   var type = Ext.typeOf(validator), result = validator.fn;
   if (type === 'function') {
     result = this.wrapValidatorFn(validator);
+  } else if (type === 'regexp') {
+    result = Ext.Factory.validator({type:'format', matcher:validator});
+  } else if (type === 'object' && result && !validator.isValidator) {
+    result = this.wrapValidatorFn(result, validator);
   } else {
-    if (type === 'regexp') {
-      result = Ext.Factory.validator({type:'format', matcher:validator});
-    } else {
-      if (type === 'object' && result && !validator.isValidator) {
-        result = this.wrapValidatorFn(result, validator);
-      } else {
-        result = Ext.Factory.validator(validator);
-      }
-    }
+    result = Ext.Factory.validator(validator);
   }
   return result;
 }}});
@@ -51404,10 +50900,8 @@ defaultBindProperty:'value', twoWayBindable:{value:1}, publishes:{value:1}, inpu
       if (!clearTrigger) {
         me.addTrigger('clear', 'clear');
       }
-    } else {
-      if (clearTrigger) {
-        me.removeTrigger('clear');
-      }
+    } else if (clearTrigger) {
+      me.removeTrigger('clear');
     }
   }
 }, applyTriggers:function(triggers, oldTriggers) {
@@ -51458,10 +50952,8 @@ defaultBindProperty:'value', twoWayBindable:{value:1}, publishes:{value:1}, inpu
   }
   if (!name) {
     Ext.raise('Trigger not found.');
-  } else {
-    if (!triggers[name]) {
-      Ext.raise('Cannot remove trigger. Trigger with name "' + name + '" not found.');
-    }
+  } else if (!triggers[name]) {
+    Ext.raise('Cannot remove trigger. Trigger with name "' + name + '" not found.');
   }
   delete triggers[name];
   if (destroy !== false) {
@@ -51680,10 +51172,8 @@ defaultBindProperty:'value', twoWayBindable:{value:1}, publishes:{value:1}, inpu
   if (!trigger.isTrigger) {
     if (trigger === true) {
       trigger = {type:name};
-    } else {
-      if (typeof trigger === 'string') {
-        trigger = {type:trigger};
-      }
+    } else if (typeof trigger === 'string') {
+      trigger = {type:trigger};
     }
     trigger = Ext.apply({name:name, field:this}, trigger);
     trigger = trigger.xtype ? Ext.create(trigger) : Ext.Factory.trigger(trigger);
@@ -51729,12 +51219,10 @@ defaultBindProperty:'value', twoWayBindable:{value:1}, publishes:{value:1}, inpu
     groupName = trigger.getGroup();
     if (groupName) {
       (triggersByGroup[groupName] || (triggersByGroup[groupName] = [])).push(trigger);
+    } else if (trigger.getSide() === 'left') {
+      beforeTriggers.push(trigger);
     } else {
-      if (trigger.getSide() === 'left') {
-        beforeTriggers.push(trigger);
-      } else {
-        afterTriggers.push(trigger);
-      }
+      afterTriggers.push(trigger);
     }
   }
   for (groupName in triggersByGroup) {
@@ -51742,7 +51230,7 @@ defaultBindProperty:'value', twoWayBindable:{value:1}, publishes:{value:1}, inpu
     if (!triggerGroup) {
       triggerGroup = triggers[groupName];
       if (!triggerGroup) {
-        triggerGroup = new TriggerBase;
+        triggerGroup = new TriggerBase();
       }
       triggerGroups[groupName] = triggerGroup;
     }
@@ -51836,7 +51324,7 @@ getLocation:Ext.emptyFn, beforeEdit:function(el, value) {
   if (!event.fromBoundList && (complete || cancel)) {
     event.stopEvent();
     if (!task) {
-      me.specialKeyTask = task = new Ext.util.DelayedTask;
+      me.specialKeyTask = task = new Ext.util.DelayedTask();
     }
     task.delay(me.specialKeyDelay, complete ? me.completeEdit : me.cancelEdit, me);
     if (me.specialKeyDelay === 0) {
@@ -51956,10 +51444,8 @@ getLocation:Ext.emptyFn, beforeEdit:function(el, value) {
     field = me.getField();
     if (me.editing) {
       me.completeEdit();
-    } else {
-      if (field.collapse) {
-        field.collapse();
-      }
+    } else if (field.collapse) {
+      field.collapse();
     }
   }
   me.callParent([hidden, oldHidden]);
@@ -52027,7 +51513,7 @@ Ext.define('Ext.Img', {extend:Ext.Component, xtype:['image', 'img'], alternateCl
 }, updateSrc:function(newSrc) {
   var me = this, dom;
   if (me.getMode() === 'background') {
-    dom = this.imageObject || new Image;
+    dom = this.imageObject || new Image();
   } else {
     dom = me.imageElement.dom;
   }
@@ -52120,10 +51606,8 @@ Ext.define('Ext.MessageBox', {extend:Ext.Dialog, xtype:'messagebox', config:{ico
   if (Ext.isSimpleObject(header)) {
     header.title = newTitle;
     this.setHeader(header);
-  } else {
-    if (Ext.isFunction(header.setTitle)) {
-      header.setTitle(newTitle);
-    }
+  } else if (Ext.isFunction(header.setTitle)) {
+    header.setTitle(newTitle);
   }
 }, applyMessage:function(config) {
   config = {html:config, cls:this.baseCls + '-text'};
@@ -52292,12 +51776,10 @@ Ext.define('Ext.TitleBar', {extend:Ext.Container, xtype:'titlebar', defaultBindP
   me.addDefaultButtonUI(item);
   if (item.config.align === 'right') {
     me.rightBox.add(item);
+  } else if (me.titleComponent && titleAlign === 'left') {
+    me.leftBox.insertBefore(item, me.titleComponent);
   } else {
-    if (me.titleComponent && titleAlign === 'left') {
-      me.leftBox.insertBefore(item, me.titleComponent);
-    } else {
-      me.leftBox.add(item);
-    }
+    me.leftBox.add(item);
   }
 }, doBoxRemove:function(item, destroy) {
   if (item.config.align === 'right') {
@@ -52320,10 +51802,8 @@ Ext.define('Ext.TitleBar', {extend:Ext.Container, xtype:'titlebar', defaultBindP
       if (item.getDefaultUI() == null) {
         item.setDefaultUI(defaultButtonUI);
       }
-    } else {
-      if (item.isButton && item.getUi() == null) {
-        item.setUi(defaultButtonUI);
-      }
+    } else if (item.isButton && item.getUi() == null) {
+      item.setUi(defaultButtonUI);
     }
   }
 }, calculateMaxButtonWidth:function() {
@@ -52372,10 +51852,8 @@ Ext.define('Ext.TitleBar', {extend:Ext.Container, xtype:'titlebar', defaultBindP
   rightDiff = titleRight - spacerBox.right;
   if (leftDiff > 0) {
     titleElement.setLeft(leftDiff);
-  } else {
-    if (rightDiff > 0) {
-      titleElement.setLeft(-rightDiff);
-    }
+  } else if (rightDiff > 0) {
+    titleElement.setLeft(-rightDiff);
   }
   titleElement.repaint();
 }, updateTitle:function(newTitle) {
@@ -52637,14 +52115,12 @@ Ext.define('Ext.dataview.Location', {isDataViewLocation:true, isLocation:true, c
     }
     if (as === 'dom') {
       item = item.dom || item;
-    } else {
-      if (as === 'el') {
-        if (!item.dom) {
-          item = Ext.get(item);
-        }
-      } else {
-        Ext.raise('Expected "as" to be "dom" or "el"');
+    } else if (as === 'el') {
+      if (!item.dom) {
+        item = Ext.get(item);
       }
+    } else {
+      Ext.raise('Expected "as" to be "dom" or "el"');
     }
   }
   return item || null;
@@ -52949,7 +52425,7 @@ Ext.define('Ext.dataview.selection.Selection', {mixins:[Ext.mixin.Factoryable], 
   return selectionModel;
 }}});
 Ext.define('Ext.dataview.selection.Rows', {extend:Ext.dataview.selection.Selection, alias:'selection.rows', isRows:true, config:{selected:true}, clone:function() {
-  return new this.self({selectionModel:this.getSelectionModel(), selected:(new Ext.util.Spans).unstash(this.getSelected().stash())});
+  return new this.self({selectionModel:this.getSelectionModel(), selected:(new Ext.util.Spans()).unstash(this.getSelected().stash())});
 }, add:function(range, keepExisting, suppressEvent) {
   var me = this, view = me.view, rowIdx, tmp, record;
   if (range.length === 1) {
@@ -53085,7 +52561,7 @@ Ext.define('Ext.dataview.selection.Rows', {extend:Ext.dataview.selection.Selecti
   }
 }, privates:{applySelected:function(spans) {
   if (!spans.isSpans) {
-    spans = new Ext.util.Spans;
+    spans = new Ext.util.Spans();
   }
   return spans;
 }, compareRanges:function(lhs, rhs) {
@@ -53731,10 +53207,8 @@ clear:'onStoreClear', load:'onStoreLoad', refresh:'onStoreRefresh', remove:'onSt
   var ret = Ext.apply({}, this.getEmptyTextDefaults());
   if (typeof emptyText === 'string') {
     ret[this.emptyTextProperty] = emptyText;
-  } else {
-    if (emptyText) {
-      Ext.apply(ret, emptyText);
-    }
+  } else if (emptyText) {
+    Ext.apply(ret, emptyText);
   }
   ret.isEmptyText = ret.hidden = true;
   ret.showInEmptyState = null;
@@ -53810,23 +53284,19 @@ clear:'onStoreClear', load:'onStoreLoad', refresh:'onStoreRefresh', remove:'onSt
   var me = this, el = me.element, item, items;
   if (value && value.isEvent) {
     item = value.getTarget(me.itemSelector, el);
+  } else if (value && (value.isElement || value.nodeType === 1)) {
+    item = Ext.fly(value).findParent(me.itemSelector, el);
+  } else if (value && value.isEntity) {
+    item = me.itemFromRecord(value);
   } else {
-    if (value && (value.isElement || value.nodeType === 1)) {
-      item = Ext.fly(value).findParent(me.itemSelector, el);
+    if (value && value.isComponent && me.items.contains(value)) {
+      item = value;
     } else {
-      if (value && value.isEntity) {
-        item = me.itemFromRecord(value);
-      } else {
-        if (value && value.isComponent && me.items.contains(value)) {
-          item = value;
-        } else {
-          items = me.getFastItems();
-          if (value < 0) {
-            value += items.length;
-          }
-          item = items[value || 0];
-        }
+      items = me.getFastItems();
+      if (value < 0) {
+        value += items.length;
       }
+      item = items[value || 0];
     }
   }
   if (item) {
@@ -53840,18 +53310,12 @@ clear:'onStoreClear', load:'onStoreLoad', refresh:'onStoreRefresh', remove:'onSt
       rec = item;
     }
     item = null;
-  } else {
-    if (item && item.isEvent) {
-      item = item.getTarget(me.itemSelector, el);
-    } else {
-      if (item && (item.isElement || item.nodeType === 1)) {
-        item = Ext.fly(item).findParent(me.itemSelector, el);
-      } else {
-        if (typeof item === 'number') {
-          item = me.mapToItem(item);
-        }
-      }
-    }
+  } else if (item && item.isEvent) {
+    item = item.getTarget(me.itemSelector, el);
+  } else if (item && (item.isElement || item.nodeType === 1)) {
+    item = Ext.fly(item).findParent(me.itemSelector, el);
+  } else if (typeof item === 'number') {
+    item = me.mapToItem(item);
   }
   if (item) {
     dom = item.isWidget ? item.el : item;
@@ -53885,29 +53349,23 @@ clear:'onStoreClear', load:'onStoreLoad', refresh:'onStoreRefresh', remove:'onSt
         break;
       }
     }
-  } else {
-    if (item) {
-      if (item.isEntity) {
-        item = me.itemFromRecord(item);
+  } else if (item) {
+    if (item.isEntity) {
+      item = me.itemFromRecord(item);
+    } else if (item.isEvent) {
+      item = item.getTarget(me.itemSelector, el);
+    } else if (item.isElement || item.nodeType === 1) {
+      item = Ext.fly(item).findParent(me.itemSelector, el);
+    }
+    if (item && items.length) {
+      if (items[0].isWidget) {
+        if (!item.isWidget) {
+          item = Ext.Component.from(item);
+        }
       } else {
-        if (item.isEvent) {
-          item = item.getTarget(me.itemSelector, el);
-        } else {
-          if (item.isElement || item.nodeType === 1) {
-            item = Ext.fly(item).findParent(me.itemSelector, el);
-          }
-        }
+        item = item.nodeType ? item : item.el.dom;
       }
-      if (item && items.length) {
-        if (items[0].isWidget) {
-          if (!item.isWidget) {
-            item = Ext.Component.from(item);
-          }
-        } else {
-          item = item.nodeType ? item : item.el.dom;
-        }
-        index = Array.prototype.indexOf.call(items, item);
-      }
+      index = Array.prototype.indexOf.call(items, item);
     }
   }
   return index;
@@ -53942,12 +53400,10 @@ clear:'onStoreClear', load:'onStoreLoad', refresh:'onStoreRefresh', remove:'onSt
     focusPosition = me.restoreFocus && navigationModel.getPreviousLocation();
     if (focusPosition) {
       focusPosition = focusPosition.refresh();
+    } else if (e.backwards) {
+      focusPosition = me.getLastDataItem();
     } else {
-      if (e.backwards) {
-        focusPosition = me.getLastDataItem();
-      } else {
-        focusPosition = me.getFirstDataItem();
-      }
+      focusPosition = me.getFirstDataItem();
     }
   } else {
     focusPosition = e;
@@ -54219,12 +53675,10 @@ clear:'onStoreClear', load:'onStoreLoad', refresh:'onStoreRefresh', remove:'onSt
   if (selectable) {
     if (typeof selectable === 'string') {
       selectable = {type:me.selectionModel, mode:selectable.toLowerCase(), view:me};
+    } else if (selectable.isSelectionModel) {
+      return selectable.setConfig(config);
     } else {
-      if (selectable.isSelectionModel) {
-        return selectable.setConfig(config);
-      } else {
-        selectable = Ext.apply(config, selectable);
-      }
+      selectable = Ext.apply(config, selectable);
     }
     if (oldSelectable) {
       if (selectable.isSelectionModel || selectable.type !== oldSelectable.type) {
@@ -54285,10 +53739,8 @@ clear:'onStoreClear', load:'onStoreLoad', refresh:'onStoreRefresh', remove:'onSt
   if (mask && !newLoad) {
     me.setMasked(false);
     me.autoMask = false;
-  } else {
-    if (!mask && newLoad) {
-      me.handleBeforeLoad();
-    }
+  } else if (!mask && newLoad) {
+    me.handleBeforeLoad();
   }
 }, updateHidden:function(hidden, oldHidden) {
   this.callParent([hidden, oldHidden]);
@@ -54366,13 +53818,11 @@ clear:'onStoreClear', load:'onStoreLoad', refresh:'onStoreRefresh', remove:'onSt
   }
   if (record.isEntity) {
     recIndex = store.indexOf(record);
+  } else if (typeof record === 'number') {
+    recIndex = record;
+    record = store.getAt(record);
   } else {
-    if (typeof record === 'number') {
-      recIndex = record;
-      record = store.getAt(record);
-    } else {
-      Ext.raise('ensureVisible first parameter must be record or recordIndex ' + 'or an options object with a record property');
-    }
+    Ext.raise('ensureVisible first parameter must be record or recordIndex ' + 'or an options object with a record property');
   }
   plan.record = record;
   plan.recordIndex = recIndex;
@@ -54406,8 +53856,8 @@ clear:'onStoreClear', load:'onStoreLoad', refresh:'onStoreRefresh', remove:'onSt
   }
 }, ensureVisiblePrep:function(plan) {
   var me = this, dataRange = me.dataRange, cleanup = function() {
-    delete dataRange['goto'];
-    return args ? dataRange['goto'](args[0], args[1]).then(function() {
+    delete dataRange["goto"];
+    return args ? dataRange["goto"](args[0], args[1]).then(function() {
       plan.record = me.store.getAt(plan.recordIndex);
       if (!plan.record) {
         throw new Error('Unable to get record');
@@ -54415,7 +53865,7 @@ clear:'onStoreClear', load:'onStoreLoad', refresh:'onStoreRefresh', remove:'onSt
     }) : Ext.Promise.resolve();
   }, args, promise;
   if (plan.async) {
-    dataRange['goto'] = function(begin, end) {
+    dataRange["goto"] = function(begin, end) {
       if (args) {
         args[0] = begin;
         args[1] = end;
@@ -54531,26 +53981,22 @@ clear:'onStoreClear', load:'onStoreLoad', refresh:'onStoreRefresh', remove:'onSt
   }
   if (typeof ret === 'number') {
     ret = null;
-  } else {
-    if (ret) {
-      if (as === 'cmp') {
-        if (!ret.isWidget) {
-          ret = Ext.getCmp(ret.id);
-        }
-      } else {
-        if (ret.isWidget) {
-          ret = ret.el;
-        }
-        if (ret) {
-          if (ret.isElement) {
-            if (as === 'dom') {
-              ret = ret.dom;
-            }
-          } else {
-            if (as === 'el') {
-              ret = Ext.fly(ret);
-            }
+  } else if (ret) {
+    if (as === 'cmp') {
+      if (!ret.isWidget) {
+        ret = Ext.getCmp(ret.id);
+      }
+    } else {
+      if (ret.isWidget) {
+        ret = ret.el;
+      }
+      if (ret) {
+        if (ret.isElement) {
+          if (as === 'dom') {
+            ret = ret.dom;
           }
+        } else if (as === 'el') {
+          ret = Ext.fly(ret);
         }
       }
     }
@@ -54601,11 +54047,9 @@ clear:'onStoreClear', load:'onStoreLoad', refresh:'onStoreRefresh', remove:'onSt
       item.hide();
       item.$hidden = true;
     }
-  } else {
-    if (item.$hidden) {
-      item.$hidden = false;
-      item.show();
-    }
+  } else if (item.$hidden) {
+    item.$hidden = false;
+    item.show();
   }
 }, setItemSelection:function(records, selected) {
   records = Ext.Array.from(records);
@@ -54640,11 +54084,9 @@ clear:'onStoreClear', load:'onStoreLoad', refresh:'onStoreRefresh', remove:'onSt
     if (emptyTextCmp) {
       emptyTextCmp.hide();
     }
-  } else {
-    if ((me.hasLoadedStore || !me.getDeferEmptyText()) && !(store && store.hasPendingLoad())) {
-      emptyTextCmp = emptyTextCmp || me.getEmptyTextCmp();
-      emptyTextCmp.show();
-    }
+  } else if ((me.hasLoadedStore || !me.getDeferEmptyText()) && !(store && store.hasPendingLoad())) {
+    emptyTextCmp = emptyTextCmp || me.getEmptyTextCmp();
+    emptyTextCmp.show();
   }
   me.setEmptyState(empty);
   return empty;
@@ -54718,12 +54160,10 @@ clear:'onStoreClear', load:'onStoreLoad', refresh:'onStoreRefresh', remove:'onSt
   if (e.getTarget(me.scrollbarSelector)) {
     e.preventDefault();
     isWithinScrollbar = true;
-  } else {
-    if (!e.getTarget(me.itemSelector)) {
-      e.preventDefault();
-      if (!me.bodyElement.getClientRegion().contains(e.getPoint())) {
-        isWithinScrollbar = true;
-      }
+  } else if (!e.getTarget(me.itemSelector)) {
+    e.preventDefault();
+    if (!me.bodyElement.getClientRegion().contains(e.getPoint())) {
+      isWithinScrollbar = true;
     }
   }
   if (isWithinScrollbar) {
@@ -54737,16 +54177,14 @@ clear:'onStoreClear', load:'onStoreLoad', refresh:'onStoreRefresh', remove:'onSt
     hide = show = false;
     if (showInEmptyState === false) {
       hide = !(show = !empty);
-    } else {
-      if (showInEmptyState) {
-        if (typeof showInEmptyState === 'function') {
-          hide = !(show = item.showInEmptyState(empty));
-          if (show == null) {
-            continue;
-          }
-        } else {
-          hide = !(show = empty);
+    } else if (showInEmptyState) {
+      if (typeof showInEmptyState === 'function') {
+        hide = !(show = item.showInEmptyState(empty));
+        if (show == null) {
+          continue;
         }
+      } else {
+        hide = !(show = empty);
       }
     }
     if (hide) {
@@ -54755,13 +54193,11 @@ clear:'onStoreClear', load:'onStoreLoad', refresh:'onStoreRefresh', remove:'onSt
       } else {
         item.hide();
       }
-    } else {
-      if (show) {
-        if (item.isInner) {
-          me.setItemHidden(item, false);
-        } else {
-          item.show();
-        }
+    } else if (show) {
+      if (item.isInner) {
+        me.setItemHidden(item, false);
+      } else {
+        item.show();
       }
     }
   }
@@ -55174,12 +54610,10 @@ Ext.define('Ext.dataview.Component', {extend:Ext.dataview.Abstract, xtype:'compo
       } else {
         el.addCls(selectedCls);
       }
+    } else if (itemClasses) {
+      delete itemClasses[selectedCls];
     } else {
-      if (itemClasses) {
-        delete itemClasses[selectedCls];
-      } else {
-        el.removeCls(selectedCls);
-      }
+      el.removeCls(selectedCls);
     }
     item.setRecord(record);
     item.el.dom.setAttribute('data-recordid', record.internalId);
@@ -55299,7 +54733,7 @@ Ext.define('Ext.dataview.GroupStore', {extend:Ext.data.ChainedStore, isGroupStor
         }
         if (!groupMap[groupKey]) {
           if (!(placeholder = srcGroup.placeholderRec)) {
-            srcGroup.placeholderRec = placeholder = new M;
+            srcGroup.placeholderRec = placeholder = new M();
             placeholder.data[groupField] = placeholder.$groupKey = groupKey;
             placeholder.$groupValue = srcGroup.getGroupValue();
             placeholder.$collapsedGroupPlaceholder = true;
@@ -55308,10 +54742,8 @@ Ext.define('Ext.dataview.GroupStore', {extend:Ext.data.ChainedStore, isGroupStor
           groupMap[groupKey] = placeholder;
           copy.push(placeholder);
         }
-      } else {
-        if (copy) {
-          copy.push(rec);
-        }
+      } else if (copy) {
+        copy.push(rec);
       }
     }
   }
@@ -55568,10 +55000,8 @@ className:Ext.baseCSSPrefix + 'list-inner-ct'}]}]}], beforeInitialize:function(c
     groups = store.getGroups();
     if (key.isGroup) {
       key = key.getGroupKey();
-    } else {
-      if (key.isModel) {
-        key = groups.getGrouper().getGroupString(key);
-      }
+    } else if (key.isModel) {
+      key = groups.getGrouper().getGroupString(key);
     }
     group = groups.get(key);
     if (group) {
@@ -55772,10 +55202,8 @@ className:Ext.baseCSSPrefix + 'list-inner-ct'}]}]}], beforeInitialize:function(c
         viewport.on('orientationchange', 'onOrientationChange', me);
       }
     }
-  } else {
-    if (Ext.os.is.iOS && viewport) {
-      viewport.un('orientationchange', 'onOrientationChange', me);
-    }
+  } else if (Ext.os.is.iOS && viewport) {
+    viewport.un('orientationchange', 'onOrientationChange', me);
   }
 }, onListNavigate:function(list, to, from) {
   var nodeName = to.sourceElement.nodeName;
@@ -55799,10 +55227,8 @@ className:Ext.baseCSSPrefix + 'list-inner-ct'}]}]}], beforeInitialize:function(c
     if (me.infinite) {
       me.syncPinnedFooter();
     }
-  } else {
-    if (pinnedFooter) {
-      me.setItemHidden(pinnedFooter, true);
-    }
+  } else if (pinnedFooter) {
+    me.setItemHidden(pinnedFooter, true);
   }
 }, applyPinnedFooter:function(config, existing) {
   var me = this, ret = Ext.updateWidget(existing, config, me, 'createPinnedFooter'), index;
@@ -55834,10 +55260,8 @@ className:Ext.baseCSSPrefix + 'list-inner-ct'}]}]}], beforeInitialize:function(c
     if (me.infinite) {
       me.syncPinnedHeader();
     }
-  } else {
-    if (pinnedHeader) {
-      me.setItemHidden(pinnedHeader, true);
-    }
+  } else if (pinnedHeader) {
+    me.setItemHidden(pinnedHeader, true);
   }
 }, applyPinnedHeader:function(config, existing) {
   var me = this, ret = Ext.updateWidget(existing, config, me, 'createPinnedHeader');
@@ -55866,10 +55290,8 @@ className:Ext.baseCSSPrefix + 'list-inner-ct'}]}]}], beforeInitialize:function(c
   if (ret) {
     if (ret.isVirtualStore) {
       me.setCollapsible(null);
-    } else {
-      if (me.isGrouping() && me.getCollapsible()) {
-        me.store = ret = new Ext.dataview.GroupStore({autoDestroy:true, list:me, source:ret});
-      }
+    } else if (me.isGrouping() && me.getCollapsible()) {
+      me.store = ret = new Ext.dataview.GroupStore({autoDestroy:true, list:me, source:ret});
     }
   }
   return ret;
@@ -56053,17 +55475,13 @@ className:Ext.baseCSSPrefix + 'list-inner-ct'}]}]}], beforeInitialize:function(c
   delta = newIndexTop - indexTop;
   if (delta > 0 && delta < rowCount) {
     me.rollDown(delta);
-  } else {
-    if (delta < 0 && -delta < rowCount) {
-      me.rollUp(-delta);
-    } else {
-      if (delta || me.refreshing) {
-        me.teleport(y);
-      }
-    }
+  } else if (delta < 0 && -delta < rowCount) {
+    me.rollUp(-delta);
+  } else if (delta || me.refreshing) {
+    me.teleport(y);
   }
 }, bindStore:function(store) {
-  var me = this, Model = store.getModel(), tombstoneRec = new Model;
+  var me = this, Model = store.getModel(), tombstoneRec = new Model();
   if (store.isBufferedStore) {
     Ext.raise('Did you mean to use Ext.data.virtual.Store? ' + '(Ext.data.BufferedStore is not supported)');
   }
@@ -56125,15 +55543,13 @@ className:Ext.baseCSSPrefix + 'list-inner-ct'}]}]}], beforeInitialize:function(c
       me.removeGroupItem(decoration, def, !enabled);
       decoration = null;
     }
-  } else {
-    if (decoration) {
-      destroyed = me.removeGroupItem(decoration, def, !enabled);
-      if (!destroyed && infinite) {
-        me.setItemHidden(decoration, true);
-        me.reorderItem(decoration);
-      }
-      decoration = null;
+  } else if (decoration) {
+    destroyed = me.removeGroupItem(decoration, def, !enabled);
+    if (!destroyed && infinite) {
+      me.setItemHidden(decoration, true);
+      me.reorderItem(decoration);
     }
+    decoration = null;
   }
   item[property] = decoration;
 }, changeItem:function(itemIndex, recordIndex) {
@@ -56191,11 +55607,9 @@ className:Ext.baseCSSPrefix + 'list-inner-ct'}]}]}], beforeInitialize:function(c
     if (record !== item.getRecord()) {
       me.dislodgeItem(item, options, stickyItem);
     }
-  } else {
-    if (stickyItem) {
-      me.dislodgeItem(item, options, stickyItem);
-      me.removeDataItem(item);
-    }
+  } else if (stickyItem) {
+    me.dislodgeItem(item, options, stickyItem);
+    me.removeDataItem(item);
   }
 }, clearItemCaches:function() {
   var info = this.groupingInfo, headers = info.header.unused, footers = info.footer.unused, placeholders = info.placeholder.unused;
@@ -56218,32 +55632,24 @@ className:Ext.baseCSSPrefix + 'list-inner-ct'}]}]}], beforeInitialize:function(c
     hide = true;
     y = y0;
     pinned = 'top';
-  } else {
-    if (recordIndex >= renderInfo.indexBottom) {
-      hide = true;
-      y = y1;
-      pinned = 'bottom';
-    } else {
-      if (y < y0) {
-        y = y0;
-        pinned = 'top';
-      } else {
-        if (y > y1) {
-          y = y1;
-          pinned = 'bottom';
-        }
-      }
-    }
+  } else if (recordIndex >= renderInfo.indexBottom) {
+    hide = true;
+    y = y1;
+    pinned = 'bottom';
+  } else if (y < y0) {
+    y = y0;
+    pinned = 'top';
+  } else if (y > y1) {
+    y = y1;
+    pinned = 'bottom';
   }
   if (options.autoPin) {
     ret = y;
     if (item.isDataViewPinnable) {
       item.setPinned(pinned);
     }
-  } else {
-    if (hide) {
-      me.setItemHidden(item, true);
-    }
+  } else if (hide) {
+    me.setItemHidden(item, true);
   }
   return ret;
 }, createGroupFooter:function() {
@@ -56291,10 +55697,8 @@ className:Ext.baseCSSPrefix + 'list-inner-ct'}]}]}], beforeInitialize:function(c
   if (!replacement) {
     replacement = me.acquireItem(me.indexOf(item));
     dataItems.pop();
-  } else {
-    if (replacement.$sticky && !replacement.$sticky.dislodged) {
-      me.dislodgeItem(replacement, {itemIndex:dataItems.indexOf(replacement)});
-    }
+  } else if (replacement.$sticky && !replacement.$sticky.dislodged) {
+    me.dislodgeItem(replacement, {itemIndex:dataItems.indexOf(replacement)});
   }
   me.dataItems[options.itemIndex] = options.item = replacement;
   replacement.$footer = item.$footer;
@@ -56356,10 +55760,8 @@ className:Ext.baseCSSPrefix + 'list-inner-ct'}]}]}], beforeInitialize:function(c
           scrollTop = scroller.getPosition().y;
         }
       }
-    } else {
-      if (me.dataItems.length && !store.hasPendingLoad()) {
-        me.doClear();
-      }
+    } else if (me.dataItems.length && !store.hasPendingLoad()) {
+      me.doClear();
     }
     if (!preventSync) {
       me.resync(true);
@@ -56533,28 +55935,26 @@ className:Ext.baseCSSPrefix + 'list-inner-ct'}]}]}], beforeInitialize:function(c
         }
       }
     }
-  } else {
-    if (n) {
-      rowHeight = me.rowHeight;
-      if (!rowHeight || placeholderHeight === null) {
-        if (hasItemVm) {
-          me.lookupViewModel().notify();
-        }
-        for (i = 0; i < n; ++i) {
-          row = rows[i];
-          if (!row.isListItemPlaceholder) {
-            if (!rowHeight) {
-              row.$height = null;
-              me.rowHeight = rowHeight = me.measureItem(row);
-            }
-            row.$height = rowHeight;
-          } else {
-            if (placeholderHeight === null) {
-              row.$height = null;
-              me.placeholderHeight = placeholderHeight = me.measureItem(row);
-            }
-            row.$height = placeholderHeight;
+  } else if (n) {
+    rowHeight = me.rowHeight;
+    if (!rowHeight || placeholderHeight === null) {
+      if (hasItemVm) {
+        me.lookupViewModel().notify();
+      }
+      for (i = 0; i < n; ++i) {
+        row = rows[i];
+        if (!row.isListItemPlaceholder) {
+          if (!rowHeight) {
+            row.$height = null;
+            me.rowHeight = rowHeight = me.measureItem(row);
           }
+          row.$height = rowHeight;
+        } else {
+          if (placeholderHeight === null) {
+            row.$height = null;
+            me.placeholderHeight = placeholderHeight = me.measureItem(row);
+          }
+          row.$height = placeholderHeight;
         }
       }
     }
@@ -56717,10 +56117,8 @@ className:Ext.baseCSSPrefix + 'list-inner-ct'}]}]}], beforeInitialize:function(c
           y += me.setItemPosition(item, y);
         }
       }
-    } else {
-      if (y && !Object.keys(me.gapMap).length) {
-        Ext.raise('Top-most item should be positioned at 0 not ' + y);
-      }
+    } else if (y && !Object.keys(me.gapMap).length) {
+      Ext.raise('Top-most item should be positioned at 0 not ' + y);
     }
   }
   for (i = len - count; i < len; ++i) {
@@ -56835,13 +56233,11 @@ className:Ext.baseCSSPrefix + 'list-inner-ct'}]}]}], beforeInitialize:function(c
   var me = this, renderInfo = me.renderInfo, renderTop = renderInfo.top, renderBottom = renderInfo.bottom, indexTop = renderInfo.indexTop, ret;
   if (y < renderTop) {
     ret = Math.floor(y / renderTop * indexTop);
+  } else if (y < renderBottom) {
+    ret = indexTop + me.bisectPosition(y);
   } else {
-    if (y < renderBottom) {
-      ret = indexTop + me.bisectPosition(y);
-    } else {
-      y -= renderBottom;
-      ret = Math.min(renderInfo.indexBottom + Math.floor(y / me.rowHeight), me.store.getCount() - 1);
-    }
+    y -= renderBottom;
+    ret = Math.min(renderInfo.indexBottom + Math.floor(y / me.rowHeight), me.store.getCount() - 1);
   }
   return ret;
 }, removeDataItem:function(item, preventCache) {
@@ -56948,12 +56344,10 @@ className:Ext.baseCSSPrefix + 'list-inner-ct'}]}]}], beforeInitialize:function(c
 }, setItemHiddenInfinite:function(item, hide) {
   if (!hide) {
     item.$hidden = false;
-  } else {
-    if (!item.$hidden) {
-      item.$hidden = true;
-      item.$position = null;
-      item.translate(0, -10000);
-    }
+  } else if (!item.$hidden) {
+    item.$hidden = true;
+    item.$position = null;
+    item.translate(0, -10000);
   }
 }, setItemPosition:function(item, y) {
   if (item.$hidden) {
@@ -57003,23 +56397,21 @@ className:Ext.baseCSSPrefix + 'list-inner-ct'}]}]}], beforeInitialize:function(c
     if (stickyPos !== null) {
       me.setItemPosition(item, stickyPos);
     }
-  } else {
-    if (opt) {
-      Ext.Array.remove(stickyItems, item);
-      delete stickyItemsByRecordId[record.internalId];
-      item.removeCls(stickyCls);
-      item.$sticky = null;
-      if (opt.autoPin && item.isDataViewPinnable) {
-        item.setPinned(false);
-      }
-      if (opt.floated) {
-        delete item.$position;
-      }
-      if (opt.dislodged) {
-        me.removeDataItem(item);
-      } else {
-        me.setItemPosition(item, opt.pos);
-      }
+  } else if (opt) {
+    Ext.Array.remove(stickyItems, item);
+    delete stickyItemsByRecordId[record.internalId];
+    item.removeCls(stickyCls);
+    item.$sticky = null;
+    if (opt.autoPin && item.isDataViewPinnable) {
+      item.setPinned(false);
+    }
+    if (opt.floated) {
+      delete item.$position;
+    }
+    if (opt.dislodged) {
+      me.removeDataItem(item);
+    } else {
+      me.setItemPosition(item, opt.pos);
     }
   }
 }, syncContentTop:function() {
@@ -57054,23 +56446,21 @@ className:Ext.baseCSSPrefix + 'list-inner-ct'}]}]}], beforeInitialize:function(c
       pinnedFooter.setGroup(footers.map[footerIndices[index]]);
       if (visibleBottomIndex === footerIndices[index] && dataItems[visibleBottomIndex - indexTop].$y1 === bottom) {
         hide = true;
-      } else {
-        if (index) {
-          index = footerIndices[index - 1];
-          if (index < indexTop) {
-            y = 0;
-          } else {
-            y = dataItems[index - indexTop].$y1;
-            gap = me.gapMap[index + 1] || 0;
-            if (gap) {
-              if (!(hide = bottom - y < gap)) {
-                y += gap;
-              }
+      } else if (index) {
+        index = footerIndices[index - 1];
+        if (index < indexTop) {
+          y = 0;
+        } else {
+          y = dataItems[index - indexTop].$y1;
+          gap = me.gapMap[index + 1] || 0;
+          if (gap) {
+            if (!(hide = bottom - y < gap)) {
+              y += gap;
             }
           }
-        } else {
-          y = scrollDock ? scrollDock.start.height : 0;
         }
+      } else {
+        y = scrollDock ? scrollDock.start.height : 0;
       }
       if (!hide) {
         height = me.measureItem(pinnedFooter);
@@ -57082,10 +56472,8 @@ className:Ext.baseCSSPrefix + 'list-inner-ct'}]}]}], beforeInitialize:function(c
   }
   if (hide) {
     me.setItemHidden(pinnedFooter, true);
-  } else {
-    if (pinnedFooter) {
-      me.syncPinnedHorz(pinnedFooter);
-    }
+  } else if (pinnedFooter) {
+    me.syncPinnedHorz(pinnedFooter);
   }
 }, syncPinnedHeader:function(visibleTop) {
   var me = this, dataItems = me.dataItems, len = dataItems.length, pinnedHeader = me.pinnedHeader, renderInfo = me.renderInfo, grouping = me.pinHeaders && pinnedHeader && len && me.isGrouping(), hide = pinnedHeader, indexTop = renderInfo.indexTop, scrollDock = me.scrollDockedItems, headerIndices, headers, height, index, visibleTopIndex, y, headerIndex, gap, item;
@@ -57130,10 +56518,8 @@ className:Ext.baseCSSPrefix + 'list-inner-ct'}]}]}], beforeInitialize:function(c
   }
   if (hide) {
     me.setItemHidden(pinnedHeader, true);
-  } else {
-    if (pinnedHeader) {
-      me.syncPinnedHorz(pinnedHeader);
-    }
+  } else if (pinnedHeader) {
+    me.syncPinnedHorz(pinnedHeader);
   }
 }, syncPinnedHorz:function(item) {
   var me = this, scroller = item.getScrollable();
@@ -57254,10 +56640,8 @@ className:Ext.baseCSSPrefix + 'list-inner-ct'}]}]}], beforeInitialize:function(c
   item.$height = height;
   if (item.$pinnedFooter) {
     this.setPinnedFooterHeight(height);
-  } else {
-    if (item.$pinnedHeader) {
-      this.setPinnedHeaderHeight(height);
-    }
+  } else if (item.$pinnedHeader) {
+    this.setPinnedHeaderHeight(height);
   }
 }, teleport:function(y) {
   var me = this, scrollSize = me.getScrollable().getSize(), renderInfo = me.renderInfo, rowCount = me.dataItems.length, storeCount = me.store.getCount(), indexMax = storeCount - rowCount, backOff = me.getBufferSize(), scrollDock = me.scrollDockedItems, nextTeleportTopIndex = me.nextTeleportTopIndex, bottomUp, indexTop;
@@ -57331,10 +56715,8 @@ className:Ext.baseCSSPrefix + 'list-inner-ct'}]}]}], beforeInitialize:function(c
       if (item === dataItems[0] && !item.isFirst) {
         next = renderInfo.indexTop;
       }
-    } else {
-      if (item === dataItems[dataItems.length - 1] && !item.isLast) {
-        next = renderInfo.indexBottom + 1;
-      }
+    } else if (item === dataItems[dataItems.length - 1] && !item.isLast) {
+      next = renderInfo.indexBottom + 1;
     }
   }
   return next ? next - 1 : this.callParent([item, delta]);
@@ -57405,7 +56787,7 @@ className:Ext.baseCSSPrefix + 'list-inner-ct'}]}]}], beforeInitialize:function(c
       bottom = Math.min(total, bottom);
     }
   }
-  me.dataRange['goto'](top, bottom);
+  me.dataRange["goto"](top, bottom);
 }, updateVerticalOverflow:function(overflow, oldOverflow) {
   var me = this, items = me.items.items, n = items.length, i, item, width;
   if (me.infinite) {
@@ -57684,10 +57066,8 @@ Ext.define('Ext.dataview.DataView', {extend:Ext.dataview.Abstract, alternateClas
     if (itemCount > storeCount) {
       me.removeItems(storeCount, itemCount);
       itemCount = storeCount;
-    } else {
-      if (itemCount < storeCount) {
-        me.renderItems(itemCount, storeCount);
-      }
+    } else if (itemCount < storeCount) {
+      me.renderItems(itemCount, storeCount);
     }
     for (i = 0; i < itemCount; ++i) {
       me.changeItem(i);
@@ -57743,10 +57123,8 @@ Ext.define('Ext.dataview.DataView', {extend:Ext.dataview.Abstract, alternateClas
   if (item) {
     if (item.isElement) {
       dom = item.dom;
-    } else {
-      if (item.isWidget) {
-        dom = item.el.dom;
-      }
+    } else if (item.isWidget) {
+      dom = item.el.dom;
     }
     i = Array.prototype.indexOf.call(items, dom);
     if (i > -1) {
@@ -57931,10 +57309,8 @@ Ext.define('Ext.dataview.IndexBar', {extend:Ext.Component, alternateClassName:'E
       lastPosition = last.getY();
       if (point.y < firstPosition) {
         target = first;
-      } else {
-        if (point.y > lastPosition) {
-          target = last;
-        }
+      } else if (point.y > lastPosition) {
+        target = last;
       }
       if (isValidTarget) {
         indicatorInner.setHtml(target.getHtml().toUpperCase());
@@ -57949,10 +57325,8 @@ Ext.define('Ext.dataview.IndexBar', {extend:Ext.Component, alternateClassName:'E
       lastPosition = last.getX();
       if (point.x < firstPosition) {
         target = first;
-      } else {
-        if (point.x > lastPosition) {
-          target = last;
-        }
+      } else if (point.x > lastPosition) {
+        target = last;
       }
       indicator.setLeft(target.getX() - renderElement.getX() - indicatorSize / 2 + target.getWidth() / 2);
       indicator.setBottom(indicatorSpacing + indexbarHeight);
@@ -58019,12 +57393,10 @@ Ext.define('Ext.dataview.IndexBar', {extend:Ext.Component, alternateClassName:'E
     me.indicator = me.el.appendChild(config);
     me.indicatorInner = me.indicator.appendChild({cls:me.indicatorCls + '-inner'});
     me.indicator.hide(false);
-  } else {
-    if (me.indicator) {
-      me.indicator.destroy();
-      me.indicatorInner.destroy();
-      me.indicator = me.indicatorInner = null;
-    }
+  } else if (me.indicator) {
+    me.indicator.destroy();
+    me.indicatorInner.destroy();
+    me.indicator = me.indicatorInner = null;
   }
 }, updateLetters:function(letters) {
   var bodyElement = this.bodyElement, len = letters.length, i;
@@ -58067,7 +57439,7 @@ Ext.define('Ext.dataview.ListItem', {extend:Ext.dataview.DataItem, alternateClas
 Ext.define('Ext.layout.HBox', {extend:Ext.layout.Box, alias:'layout.hbox', config:{vertical:false}});
 Ext.define('Ext.tip.ToolTip', {extend:Ext.Panel, xtype:'tooltip', floated:true, hidden:true, shadow:true, border:true, bodyBorder:false, anchor:false, closeAction:'hide', config:{align:'l-r?', alignDelegate:null, allowOver:null, anchorToTarget:true, autoHide:true, delegate:null, dismissDelay:5000, hideDelay:300, mouseOffset:[15, 18], quickShowInterval:250, showDelay:500, showOnTap:null, target:null, trackMouse:false}, classCls:Ext.baseCSSPrefix + 'tooltip', headerCls:Ext.baseCSSPrefix + 'tooltipheader', 
 titleCls:Ext.baseCSSPrefix + 'tooltiptitle', toolCls:[Ext.baseCSSPrefix + 'paneltool', Ext.baseCSSPrefix + 'tooltiptool'], closeToolText:null, constructor:function(config) {
-  this.currentTarget = new Ext.dom.Fly;
+  this.currentTarget = new Ext.dom.Fly();
   this.callParent([config]);
 }, getRefOwner:function() {
   var target = this.getTarget();
@@ -58137,14 +57509,10 @@ titleCls:Ext.baseCSSPrefix + 'tooltiptitle', toolCls:[Ext.baseCSSPrefix + 'panel
   } else {
     if (target.isWidget) {
       me.updateCurrentTarget(target.element.dom);
-    } else {
-      if (target.isElement) {
-        me.updateCurrentTarget(target.dom);
-      } else {
-        if (target.nodeType) {
-          me.updateCurrentTarget(target);
-        }
-      }
+    } else if (target.isElement) {
+      me.updateCurrentTarget(target.dom);
+    } else if (target.nodeType) {
+      me.updateCurrentTarget(target);
     }
     if (alignDelegate) {
       target = Ext.fly(target);
@@ -58170,7 +57538,7 @@ titleCls:Ext.baseCSSPrefix + 'tooltiptitle', toolCls:[Ext.baseCSSPrefix + 'panel
   me.clearTimer('hide');
   me.clearTimer('dismiss');
   me.callParent();
-  me.lastHidden = new Date;
+  me.lastHidden = new Date();
   me.updateCurrentTarget(null);
   Ext.destroy(me.mousedownListener);
 }, doDestroy:function() {
@@ -58185,14 +57553,12 @@ titleCls:Ext.baseCSSPrefix + 'tooltiptitle', toolCls:[Ext.baseCSSPrefix + 'panel
     if (e.pointerType !== 'mouse' && me.getAllowOver()) {
       me.clearTimer('dismiss');
     }
-  } else {
-    if (!me.getClosable()) {
-      if (e.within(me.targetElement) && (!delegate || e.getTarget(delegate, me.targetElement))) {
-        me.delayHide();
-      } else {
-        me.disable();
-        me.enableTimer = Ext.defer(me.enable, 100, me);
-      }
+  } else if (!me.getClosable()) {
+    if (e.within(me.targetElement) && (!delegate || e.getTarget(delegate, me.targetElement))) {
+      me.delayHide();
+    } else {
+      me.disable();
+      me.enableTimer = Ext.defer(me.enable, 100, me);
     }
   }
 }, onTargetOver:function(e) {
@@ -58211,19 +57577,15 @@ titleCls:Ext.baseCSSPrefix + 'tooltiptitle', toolCls:[Ext.baseCSSPrefix + 'panel
     if (newTarget && e.getRelatedTarget(delegate) === newTarget) {
       return;
     }
+  } else if (!myTarget.contains(e.relatedTarget)) {
+    newTarget = myTarget.dom;
   } else {
-    if (!myTarget.contains(e.relatedTarget)) {
-      newTarget = myTarget.dom;
-    } else {
-      return;
-    }
+    return;
   }
   if (newTarget) {
     me.handleTargetOver(e, newTarget);
-  } else {
-    if (currentTarget.dom) {
-      me.handleTargetOut();
-    }
+  } else if (currentTarget.dom) {
+    me.handleTargetOut();
   }
 }, handleTargetOver:function(e, newTarget) {
   var me = this, myListeners = me.hasListeners;
@@ -58298,10 +57660,8 @@ titleCls:Ext.baseCSSPrefix + 'tooltiptitle', toolCls:[Ext.baseCSSPrefix + 'panel
     } else {
       me.showTimer = Ext.defer(me.showByTarget, !me.pointerEvent || me.pointerEvent.pointerType === 'mouse' ? me.getShowDelay() : 0, me, [target]);
     }
-  } else {
-    if (!me.getHidden() && me.getAutoHide() !== false) {
-      me.showByTarget(target);
-    }
+  } else if (!me.getHidden() && me.getAutoHide() !== false) {
+    me.showByTarget(target);
   }
 }, showByTarget:function(target) {
   var me = this, isTarget = me.getAnchorToTarget() && !me.getTrackMouse();
@@ -58518,17 +57878,15 @@ Ext.define('Ext.field.Manager', {mixinId:'fieldmanager', fillRecord:function(rec
             if (f.isRadio) {
               f.setGroupValue(value);
               break;
-            } else {
-              if (f.isCheckbox) {
-                if (Ext.isArray(value)) {
-                  f.setChecked(value.indexOf(f._value) !== -1);
-                } else {
-                  f.setChecked(value === f._value);
-                }
+            } else if (f.isCheckbox) {
+              if (Ext.isArray(value)) {
+                f.setChecked(value.indexOf(f._value) !== -1);
               } else {
-                if (Ext.isArray(value)) {
-                  f.setValue(value[i]);
-                }
+                f.setChecked(value === f._value);
+              }
+            } else {
+              if (Ext.isArray(value)) {
+                f.setValue(value[i]);
               }
             }
           }
@@ -58679,30 +58037,26 @@ Ext.define('Ext.field.Manager', {mixinId:'fieldmanager', fillRecord:function(rec
   var relation = deep === false ? '\x3e' : '', selector = relation + 'field' + (byName ? '[name\x3d' + byName + ']' : ''), fields = this.query(selector), asArray = byName === false, obj, i, length, field, name, bucket;
   if (!fields && asArray) {
     return [];
-  } else {
-    if (fields && !asArray) {
-      if (!byName) {
-        obj = {};
-        for (i = 0, length = fields.length; i < length; i++) {
-          field = fields[i];
-          name = field.getName();
-          bucket = obj[name];
-          if (bucket) {
-            if (Ext.isArray(bucket)) {
-              bucket.push(field);
-            } else {
-              obj[name] = [bucket, field];
-            }
+  } else if (fields && !asArray) {
+    if (!byName) {
+      obj = {};
+      for (i = 0, length = fields.length; i < length; i++) {
+        field = fields[i];
+        name = field.getName();
+        bucket = obj[name];
+        if (bucket) {
+          if (Ext.isArray(bucket)) {
+            bucket.push(field);
           } else {
-            obj[name] = field;
+            obj[name] = [bucket, field];
           }
-        }
-        return obj;
-      } else {
-        if (fields.length < 2) {
-          return fields[0];
+        } else {
+          obj[name] = field;
         }
       }
+      return obj;
+    } else if (fields.length < 2) {
+      return fields[0];
     }
   }
   return fields;
@@ -59073,16 +58427,12 @@ Ext.define('Ext.field.ChipViewNavigationModel', {extend:Ext.dataview.BoundListNa
         isLast = location.isLast();
         if (isLast && e.keyCode === e.DELETE) {
           this.clearLocation();
-        } else {
-          if (view.dataItems.length) {
-            selModel.select(location.refresh().record);
-          }
+        } else if (view.dataItems.length) {
+          selModel.select(location.refresh().record);
         }
       }
-    } else {
-      if (e.keyCode === e.BACKSPACE) {
-        this.onKeyLeft(e);
-      }
+    } else if (e.keyCode === e.BACKSPACE) {
+      this.onKeyLeft(e);
     }
   }
 }, onNavigate:function(event) {
@@ -59143,10 +58493,8 @@ autoComplete:false, classCls:Ext.baseCSSPrefix + 'pickerfield', initialize:funct
     me.onExpandTap();
     me.setPickerLocation(true);
     me.lastDownArrow = e.time;
-  } else {
-    if (!e.stopped && e.time - me.lastDownArrow < 150) {
-      delete me.lastDownArrow;
-    }
+  } else if (!e.stopped && e.time - me.lastDownArrow < 150) {
+    delete me.lastDownArrow;
   }
 }, setPickerLocation:Ext.emptyFn, updateHideTrigger:function(hideTrigger) {
   var triggers = this.getTriggers(), expand = triggers && triggers.expand;
@@ -59157,13 +58505,11 @@ autoComplete:false, classCls:Ext.baseCSSPrefix + 'pickerfield', initialize:funct
   var me = this, pickerListeners = {show:'onPickerShow', hide:'onPickerHide', scope:me}, type = picker, config;
   if (!type) {
     type = 'auto';
-  } else {
-    if (Ext.isObject(picker)) {
-      type = null;
-      if (!picker.isWidget && !picker.xtype) {
-        config = picker;
-        type = 'auto';
-      }
+  } else if (Ext.isObject(picker)) {
+    type = null;
+    if (!picker.isWidget && !picker.xtype) {
+      config = picker;
+      type = 'auto';
     }
   }
   if (type) {
@@ -59172,13 +58518,11 @@ autoComplete:false, classCls:Ext.baseCSSPrefix + 'pickerfield', initialize:funct
     }
     if (type === 'edge') {
       picker = me.createEdgePicker(config);
+    } else if (type !== 'floated') {
+      Ext.raise('Picker type must be "edge" or "floated" not "' + type + '"');
     } else {
-      if (type !== 'floated') {
-        Ext.raise('Picker type must be "edge" or "floated" not "' + type + '"');
-      } else {
-        picker = me.createFloatedPicker(config);
-        pickerListeners.resize = pickerListeners.hiddenchange = 'realignFloatedPicker';
-      }
+      picker = me.createFloatedPicker(config);
+      pickerListeners.resize = pickerListeners.hiddenchange = 'realignFloatedPicker';
     }
   }
   if (picker.isWidget) {
@@ -59373,15 +58717,11 @@ navigationModel:{type:'boundlist', keyboard:false}, onFocusEnter:Ext.emptyFn, on
       if (Ext.isArray(item)) {
         obj[valueField] = item[0];
         obj[displayField] = item[1];
-      } else {
-        if (Ext.isPrimitive(item)) {
-          obj[valueField] = item;
-          obj[displayField] = item;
-        } else {
-          if (Ext.isObject(item)) {
-            obj = item;
-          }
-        }
+      } else if (Ext.isPrimitive(item)) {
+        obj[valueField] = item;
+        obj[displayField] = item;
+      } else if (Ext.isObject(item)) {
+        obj = item;
       }
       parsedData.push(obj);
     }
@@ -59753,13 +59093,11 @@ hideAnimation:null}, edgePicker:{xtype:'selectpicker', cover:true}, classCls:Ext
 }, transformValue:function(value) {
   if (value == null || value === '') {
     value = this.getForceSelection() ? null : '';
+  } else if (this.getMultiSelect()) {
+    value = Ext.Array.from(value);
   } else {
-    if (this.getMultiSelect()) {
-      value = Ext.Array.from(value);
-    } else {
-      if (Ext.isIterable(value)) {
-        value = value[0];
-      }
+    if (Ext.isIterable(value)) {
+      value = value[0];
     }
   }
   return value;
@@ -59993,10 +59331,8 @@ hideAnimation:null}, edgePicker:{xtype:'selectpicker', cover:true}, classCls:Ext
     store.on({scope:me, add:'onStoreDataChanged', remove:'onStoreDataChanged', update:'onStoreRecordUpdated', load:{fn:'onStoreLoad', priority:-1}, refresh:'onStoreRefresh'});
     if (store.isLoaded() && !store.hasPendingLoad()) {
       me.syncValue();
-    } else {
-      if (me.getValue() != null && me.getAutoLoadOnValue() && !store.isLoaded() && !store.hasPendingLoad()) {
-        store.load();
-      }
+    } else if (me.getValue() != null && me.getAutoLoadOnValue() && !store.isLoaded() && !store.hasPendingLoad()) {
+      store.load();
     }
   }
   me.updatePickerStore();
@@ -60052,10 +59388,8 @@ hideAnimation:null}, edgePicker:{xtype:'selectpicker', cover:true}, classCls:Ext
       if (!matchedRecord.isEntity) {
         matchedRecord = matchedRecord[0];
       }
-    } else {
-      if (!forceSelection) {
-        matchedRecord = me.findRecordByValue(value);
-      }
+    } else if (!forceSelection) {
+      matchedRecord = me.findRecordByValue(value);
     }
   }
   if (!isCleared && !matchedRecord && !forceSelection) {
@@ -60082,10 +59416,8 @@ hideAnimation:null}, edgePicker:{xtype:'selectpicker', cover:true}, classCls:Ext
           }
           me.setSelection(null);
         }
-      } else {
-        if (valueNotFoundText) {
-          me.setError(valueNotFoundText);
-        }
+      } else if (valueNotFoundText) {
+        me.setError(valueNotFoundText);
       }
     }
   }
@@ -60167,13 +59499,11 @@ hideAnimation:null}, edgePicker:{xtype:'selectpicker', cover:true}, classCls:Ext
     if (!me.getQueryMode || me.getQueryMode() === 'local') {
       record = store && store.getAt(0);
       me.setValue(record);
-    } else {
-      if (!me.autoSelectCompleted) {
-        me.autoSelectCompleted = true;
-        if (!me.getRawValue()) {
-          record = store && store.getAt(0);
-          me.setValue(record);
-        }
+    } else if (!me.autoSelectCompleted) {
+      me.autoSelectCompleted = true;
+      if (!me.getRawValue()) {
+        record = store && store.getAt(0);
+        me.setValue(record);
       }
     }
   }
@@ -60260,10 +59590,8 @@ hideAnimation:null}, edgePicker:{xtype:'selectpicker', cover:true}, classCls:Ext
   if (picker) {
     if (filterPickList) {
       picker.getSelectable().addIgnoredFilter(filterPickList);
-    } else {
-      if (oldFilterPickList) {
-        picker.getSelectable().removeIgnoredFilter(oldFilterPickList);
-      }
+    } else if (oldFilterPickList) {
+      picker.getSelectable().removeIgnoredFilter(oldFilterPickList);
     }
   }
   this.updatePickerStore();
@@ -60371,17 +59699,13 @@ keyMap:{scope:'this', ENTER:'onEnterKey'}, platformConfig:{phone:{editable:false
     if (Ext.now() - me.expanded > 100) {
       me.collapse();
     }
-  } else {
-    if (!me.getReadOnly() && !me.getDisabled()) {
-      if (triggerAction === 'all') {
-        me.doFilter({query:me.getAllQuery(), force:true});
-      } else {
-        if (triggerAction === 'last') {
-          me.doFilter({query:me.lastQuery.query, force:true});
-        } else {
-          me.doFilter({query:me.inputElement.dom.value});
-        }
-      }
+  } else if (!me.getReadOnly() && !me.getDisabled()) {
+    if (triggerAction === 'all') {
+      me.doFilter({query:me.getAllQuery(), force:true});
+    } else if (triggerAction === 'last') {
+      me.doFilter({query:me.lastQuery.query, force:true});
+    } else {
+      me.doFilter({query:me.inputElement.dom.value});
     }
   }
 }, clearValue:function() {
@@ -60435,12 +59759,10 @@ keyMap:{scope:'this', ENTER:'onEnterKey'}, platformConfig:{phone:{editable:false
   var me = this, query = queryPlan.query, len;
   if (me.fireEvent('beforequery', queryPlan) === false) {
     queryPlan.cancel = true;
-  } else {
-    if (!queryPlan.cancel) {
-      len = query && query.length;
-      if (!queryPlan.force && len && len < me._getMinChars()) {
-        queryPlan.cancel = true;
-      }
+  } else if (!queryPlan.cancel) {
+    len = query && query.length;
+    if (!queryPlan.force && len && len < me._getMinChars()) {
+      queryPlan.cancel = true;
     }
   }
   return queryPlan;
@@ -60478,15 +59800,11 @@ keyMap:{scope:'this', ENTER:'onEnterKey'}, platformConfig:{phone:{editable:false
           me.setValue(value);
         }
       }
-    } else {
-      if (numSelectedElements) {
-        if (me.getRequired()) {
-          me.setFieldDisplay(selection);
-        } else {
-          if (!me.getMultiSelect()) {
-            me.setSelection(null);
-          }
-        }
+    } else if (numSelectedElements) {
+      if (me.getRequired()) {
+        me.setFieldDisplay(selection);
+      } else if (!me.getMultiSelect()) {
+        me.setSelection(null);
       }
     }
     if (me.getTypeAhead()) {
@@ -60505,10 +59823,8 @@ keyMap:{scope:'this', ENTER:'onEnterKey'}, platformConfig:{phone:{editable:false
           toRemove.push(record);
         }
       });
-    } else {
-      if (!selection.isEntered && !store.contains(selection)) {
-        toRemove.push(selection);
-      }
+    } else if (!selection.isEntered && !store.contains(selection)) {
+      toRemove.push(selection);
     }
     if (toRemove.length) {
       this.getValueCollection().remove(toRemove);
@@ -60529,10 +59845,8 @@ keyMap:{scope:'this', ENTER:'onEnterKey'}, platformConfig:{phone:{editable:false
         oldFilter.setConfig(filter);
         return;
       }
-    } else {
-      if (!store.destroyed) {
-        store.getFilters().remove(oldFilter);
-      }
+    } else if (!store.destroyed) {
+      store.getFilters().remove(oldFilter);
     }
   }
   if (filter) {
@@ -60639,7 +59953,7 @@ keyMap:{scope:'this', ENTER:'onEnterKey'}, platformConfig:{phone:{editable:false
   }
 }}});
 Ext.define('Ext.field.trigger.Date', {extend:Ext.field.trigger.Expand, xtype:'datetrigger', alias:'trigger.date', classCls:Ext.baseCSSPrefix + 'datetrigger'});
-Ext.define('Ext.picker.Date', {extend:Ext.picker.Picker, xtype:'datepicker', alternateClassName:'Ext.DatePicker', config:{yearFrom:1980, yearTo:(new Date).getFullYear(), monthText:'Month', dayText:'Day', yearText:'Year', slotOrder:['month', 'day', 'year'], doneButton:true}, initialize:function() {
+Ext.define('Ext.picker.Date', {extend:Ext.picker.Picker, xtype:'datepicker', alternateClassName:'Ext.DatePicker', config:{yearFrom:1980, yearTo:(new Date()).getFullYear(), monthText:'Month', dayText:'Day', yearText:'Year', slotOrder:['month', 'day', 'year'], doneButton:true}, initialize:function() {
   var me = this;
   me.callParent();
   me.on({scope:me, delegate:'\x3e slot', slotpick:me.onSlotPick});
@@ -60726,7 +60040,7 @@ Ext.define('Ext.picker.Date', {extend:Ext.picker.Picker, xtype:'datepicker', alt
       yearsFrom++;
     }
   }
-  daysInMonth = me.getDaysInMonth(1, (new Date).getFullYear());
+  daysInMonth = me.getDaysInMonth(1, (new Date()).getFullYear());
   for (i = 0; i < daysInMonth; i++) {
     days.push({text:i + 1, value:i + 1});
   }
@@ -60889,10 +60203,8 @@ Ext.define('Ext.layout.Carousel', {extend:Ext.layout.Auto, alias:'layout.carouse
   index += increment;
   if (increment < 0) {
     index = index < 0 ? count - 1 : index;
-  } else {
-    if (increment > 0) {
-      index = index >= count ? 0 : index;
-    }
+  } else if (increment > 0) {
+    index = index >= count ? 0 : index;
   }
   return index;
 }, getVisibleItems:function() {
@@ -60938,7 +60250,7 @@ Ext.define('Ext.layout.Carousel', {extend:Ext.layout.Auto, alias:'layout.carouse
     }
     direction = oldFrontIndex > -1 && oldFrontIndex <= Math.floor(items.length / 2) ? 1 : -1;
     Ext.destroy(me.activeAnim);
-    deferred = new Ext.Deferred;
+    deferred = new Ext.Deferred();
     ret = deferred.promise;
     me.activeAnim = Ext.Animator.run(Ext.apply({element:target, to:{transform:{translateX:basis * direction + '%'}}, callback:function() {
       me.orderItems(items);
@@ -60984,7 +60296,7 @@ Ext.define('Ext.layout.Carousel', {extend:Ext.layout.Auto, alias:'layout.carouse
 Ext.define('Ext.panel.DateView', {extend:Ext.Widget, xtype:'dateview', config:{specialDates:null, specialDays:null, monthOffset:0}, cachedConfig:{captionFormat:null, dateCellFormat:null, format:null, headerLength:null, hideCaption:true, hideOutside:true, startDay:null, weekendDays:null}, element:{reference:'element'}, tableTpl:{reference:'tableElement', tag:'table', cellspacing:'0', cellpadding:'0', children:[]}, captionTpl:{reference:'captionElement', tag:'caption'}, headTpl:{tag:'thead', reference:'headElement'}, 
 headRowTpl:{tag:'tr'}, headCellTpl:{tag:'th', cls:Ext.baseCSSPrefix + 'cell', children:[{tag:'div', cls:Ext.baseCSSPrefix + 'inner ' + Ext.dom.Element.unselectableCls}]}, bodyTpl:{tag:'tbody', reference:'bodyElement'}, bodyRowTpl:{tag:'tr'}, bodyCellTpl:{tag:'td', cls:Ext.baseCSSPrefix + 'cell', tabIndex:-1, children:[{tag:'div', cls:Ext.baseCSSPrefix + 'inner ' + Ext.dom.Element.unselectableCls}]}, rows:6, columns:7, cellCls:Ext.baseCSSPrefix + 'cell', emptyCls:Ext.baseCSSPrefix + 'empty', weekendDayCls:Ext.baseCSSPrefix + 
 'weekend', disabledDayCls:Ext.baseCSSPrefix + 'disabled', specialDateCls:Ext.baseCSSPrefix + 'special', todayCls:Ext.baseCSSPrefix + 'today', outsideCls:Ext.baseCSSPrefix + 'outside', prevMonthCls:Ext.baseCSSPrefix + 'prev-month', nextMonthCls:Ext.baseCSSPrefix + 'next-month', currentMonthCls:Ext.baseCSSPrefix + 'current-month', constructor:function(config) {
-  this.firstOfMonth = Ext.Date.getFirstDateOfMonth(new Date);
+  this.firstOfMonth = Ext.Date.getFirstDateOfMonth(new Date());
   this.callParent([config]);
 }, initElement:function() {
   var me = this;
@@ -61058,7 +60370,7 @@ headRowTpl:{tag:'tr'}, headCellTpl:{tag:'th', cls:Ext.baseCSSPrefix + 'cell', ch
   startDate = ExtDate.add(monthStart, ExtDate.DAY, startOffset);
   cellMap = me.cellMap = {};
   currentMonth = monthStart.getMonth();
-  params = {today:Ext.Date.clearTime(new Date), weekendDays:me.getWeekendDays(), specialDates:me.getSpecialDates(), specialDays:me.getSpecialDays(), format:me.getFormat(), dateCellFormat:me.getDateCellFormat(), hideOutside:me.getHideOutside()};
+  params = {today:Ext.Date.clearTime(new Date()), weekendDays:me.getWeekendDays(), specialDates:me.getSpecialDates(), specialDays:me.getSpecialDays(), format:me.getFormat(), dateCellFormat:me.getDateCellFormat(), hideOutside:me.getHideOutside()};
   for (i = 0, len = cells.length; i < len; i++) {
     cell = cells[i];
     date = ExtDate.add(startDate, ExtDate.DAY, i);
@@ -61080,14 +60392,12 @@ headRowTpl:{tag:'tr'}, headCellTpl:{tag:'th', cls:Ext.baseCSSPrefix + 'cell', ch
   if (!empty) {
     if (params.outsidePrevious) {
       cls.push(me.outsideCls, me.prevMonthCls);
+    } else if (params.outsideNext) {
+      cls.push(me.outsideCls, me.nextMonthCls);
     } else {
-      if (params.outsideNext) {
-        cls.push(me.outsideCls, me.nextMonthCls);
-      } else {
-        cls.push(me.currentMonthCls);
-        if (Ext.Date.isEqual(date, params.today)) {
-          cls.push(me.todayCls);
-        }
+      cls.push(me.currentMonthCls);
+      if (Ext.Date.isEqual(date, params.today)) {
+        cls.push(me.todayCls);
       }
     }
     if (params.weekendDays[dayOfWeek]) {
@@ -61232,14 +60542,14 @@ Ext.define('Ext.panel.YearPicker', {extend:Ext.dataview.BoundList, xtype:'yearpi
   }
 }, applyEnd:function(end) {
   if (!end) {
-    end = (new Date).getFullYear() + this.getDefaultOffset();
+    end = (new Date()).getFullYear() + this.getDefaultOffset();
   }
   return end;
 }, updateEnd:function() {
   this.rebuildStore();
 }, applyStart:function(start) {
   if (!start) {
-    start = (new Date).getFullYear() - this.getDefaultOffset();
+    start = (new Date()).getFullYear() - this.getDefaultOffset();
   }
   return start;
 }, updateStart:function() {
@@ -61319,12 +60629,10 @@ sidePaneOffset:2, initialize:function() {
       if (item instanceof Date) {
         item = Ext.Date.clearTime(item);
         cfg.dates[item.getTime()] = true;
+      } else if (item instanceof RegExp) {
+        re.push(item.source);
       } else {
-        if (item instanceof RegExp) {
-          re.push(item.source);
-        } else {
-          re.push(Ext.String.escapeRegex(item));
-        }
+        re.push(Ext.String.escapeRegex(item));
       }
     }
     if (re.length) {
@@ -61419,10 +60727,8 @@ sidePaneOffset:2, initialize:function() {
 }, applyValue:function(date) {
   if (typeof date === 'string') {
     date = Ext.Date.parse(date, this.getFormat());
-  } else {
-    if (!date) {
-      date = new Date;
-    }
+  } else if (!date) {
+    date = new Date();
   }
   return Ext.isDate(date) ? Ext.Date.clearTime(date, true) : null;
 }, updateValue:function(value, oldValue) {
@@ -61526,14 +60832,12 @@ sidePaneOffset:2, initialize:function() {
         return false;
       }
     }
-  } else {
-    if (offset > 0) {
-      boundary = me.getMaxDate();
-      prevent = !me.getShowAfterMaxDate();
-      if (boundary && prevent) {
-        if (date.getTime() > Ext.Date.getLastDateOfMonth(boundary).getTime()) {
-          return false;
-        }
+  } else if (offset > 0) {
+    boundary = me.getMaxDate();
+    prevent = !me.getShowAfterMaxDate();
+    if (boundary && prevent) {
+      if (date.getTime() > Ext.Date.getLastDateOfMonth(boundary).getTime()) {
+        return false;
       }
     }
   }
@@ -61546,12 +60850,10 @@ sidePaneOffset:2, initialize:function() {
   var me = this, layout = me.getLayout(), month, increment, boundary, prevent;
   if (date.getTime() < (month = layout.getFirstVisibleItem().getMonth()).getTime()) {
     boundary = month;
+  } else if (date.getTime() > (month = layout.getLastVisibleItem().getMonth()).getTime()) {
+    boundary = month;
   } else {
-    if (date.getTime() > (month = layout.getLastVisibleItem().getMonth()).getTime()) {
-      boundary = month;
-    } else {
-      boundary = date;
-    }
+    boundary = date;
   }
   increment = date.getFullYear() * 12 + date.getMonth() - (boundary.getFullYear() * 12 + boundary.getMonth());
   if (increment < 0) {
@@ -61562,14 +60864,12 @@ sidePaneOffset:2, initialize:function() {
         increment = 0;
       }
     }
-  } else {
-    if (increment > 0) {
-      boundary = me.getMaxDate();
-      prevent = !me.getShowAfterMaxDate();
-      if (boundary && prevent) {
-        if (date.getTime() > Ext.Date.getLastDateOfMonth(boundary).getTime()) {
-          increment = 0;
-        }
+  } else if (increment > 0) {
+    boundary = me.getMaxDate();
+    prevent = !me.getShowAfterMaxDate();
+    if (boundary && prevent) {
+      if (date.getTime() > Ext.Date.getLastDateOfMonth(boundary).getTime()) {
+        increment = 0;
       }
     }
   }
@@ -61631,7 +60931,7 @@ sidePaneOffset:2, initialize:function() {
       me.replacePanes(-offset);
     }
   }
-  me.setValue(Ext.Date.clearTime(new Date));
+  me.setValue(Ext.Date.clearTime(new Date()));
 }, getFocusEl:function() {
   if (!this.initialized) {
     return null;
@@ -61664,7 +60964,7 @@ sidePaneOffset:2, initialize:function() {
   this.walkCells(Ext.Date.getLastDateOfMonth(e.target.date));
   e.preventDefault();
 }, onBackspaceKey:function(e) {
-  this.walkCells(new Date);
+  this.walkCells(new Date());
   e.preventDefault();
 }, onEnterKey:function(e) {
   var me = this, target = e.target, date = target && target.date;
@@ -61721,13 +61021,11 @@ sidePaneOffset:2, initialize:function() {
 }, privates:{cellSelector:'.' + Ext.baseCSSPrefix + 'cell', clonedCls:Ext.baseCSSPrefix + 'cloned', lastNavigate:0, hideFocusCls:Ext.baseCSSPrefix + 'hide-focus', selectedCls:Ext.baseCSSPrefix + 'selected', toolList:['navigatePrevMonth', 'navigatePrevYear', 'navigateNextYear', 'navigateNextMonth'], paneWidthMap:{}, pickerVisible:false, applyFocusableDate:function(date) {
   var me = this, D = Ext.Date, boundary;
   if (date) {
-    date = D.clearTime(date || new Date);
+    date = D.clearTime(date || new Date());
     if ((boundary = me.getMinDate()) && !me.getShowBeforeMinDate() && date.getTime() < boundary.getTime()) {
       date = boundary;
-    } else {
-      if ((boundary = me.getMaxDate()) && !me.getShowAfterMaxDate() && date.getTime() > boundary.getTime()) {
-        date = boundary;
-      }
+    } else if ((boundary = me.getMaxDate()) && !me.getShowAfterMaxDate() && date.getTime() > boundary.getTime()) {
+      date = boundary;
     }
   }
   return date;
@@ -61770,7 +61068,7 @@ sidePaneOffset:2, initialize:function() {
     me.updateCellTabIndex(date, me.getTabIndex());
   }
 }, animateVertical:function(el, direction, offset, beforeFn, prop) {
-  var me = this, clone = el.dom.cloneNode(true), ret = new Ext.Deferred;
+  var me = this, clone = el.dom.cloneNode(true), ret = new Ext.Deferred();
   clone.id = '';
   Ext.fly(clone).addCls(me.clonedCls);
   el.parent().appendChild(clone);
@@ -61838,11 +61136,9 @@ sidePaneOffset:2, initialize:function() {
   } else {
     if (increment !== 0) {
       ret = this.replacePanes(increment, animate);
-    } else {
-      if (!animate) {
-        this.getLayout().cancelAnimation();
-        ret = Ext.Deferred.getCachedResolved();
-      }
+    } else if (!animate) {
+      this.getLayout().cancelAnimation();
+      ret = Ext.Deferred.getCachedResolved();
     }
   }
   return ret;
@@ -62004,16 +61300,14 @@ oldValue) {
   return this.getFloatedPicker();
 }, createEdgePicker:function() {
   var me = this, minDate = this.getMinDate(), maxDate = this.getMaxDate();
-  return Ext.merge({yearFrom:minDate ? minDate.getFullYear() : (new Date).getFullYear() - 20, yearTo:maxDate ? maxDate.getFullYear() : (new Date).getFullYear() + 20}, me.getEdgePicker());
+  return Ext.merge({yearFrom:minDate ? minDate.getFullYear() : (new Date()).getFullYear() - 20, yearTo:maxDate ? maxDate.getFullYear() : (new Date()).getFullYear() + 20}, me.getEdgePicker());
 }, setPickerLocation:function(fromKeyboard) {
   var me = this, pickerType = me.pickerType, picker = me.getPicker(), value = me.getValue(), limit;
   me.$ignorePickerChange = true;
   if (value != null) {
     picker.setValue(value);
-  } else {
-    if (pickerType === 'edge') {
-      picker.setValue(new Date);
-    }
+  } else if (pickerType === 'edge') {
+    picker.setValue(new Date());
   }
   delete me.$ignorePickerChange;
   if (pickerType === 'floated') {
@@ -62026,7 +61320,7 @@ oldValue) {
     if (limit) {
       picker.setMaxDate(limit);
     }
-    value = value || new Date;
+    value = value || new Date();
     picker.setValueWithoutAnim(value);
     if (fromKeyboard) {
       picker.focusDate(value);
@@ -62094,7 +61388,7 @@ oldValue) {
   var me = this;
   return me.parseValue(rawValue) || rawValue || null;
 }, privates:{setShowPickerValue:function(picker) {
-  this.updatePickerValue(picker, this.getValue() || new Date);
+  this.updatePickerValue(picker, this.getValue() || new Date());
 }}, deprecated:{'6.5':{configs:{format:'dateFormat'}}}});
 Ext.define('Ext.theme.material.field.Date', {override:'Ext.field.Date', config:{floatedPicker:{selectOnNavigate:true, header:{hidden:true}}}});
 Ext.define('Ext.field.File', {extend:Ext.field.Text, xtype:'filefield', mixins:[Ext.mixin.ConfigProxy], isFile:true, proxyConfig:{fileButton:['multiple', 'accept', 'capture']}, readOnly:true, editable:false, focusable:false, inputTabIndex:-1, triggers:{file:{type:'file'}}, classCls:Ext.baseCSSPrefix + 'filefield', captureLookup:{video:'camcorder', image:'camera', audio:'microphone'}, onChange:function(me, value, startValue) {
@@ -62104,10 +61398,8 @@ Ext.define('Ext.field.File', {extend:Ext.field.Text, xtype:'filefield', mixins:[
   if (name) {
     if (multiple && name.substr(-2, 2) !== '[]') {
       name += '[]';
-    } else {
-      if (!multiple && name.substr(-2, 2) === '[]') {
-        name = name.substr(0, name.length - 2);
-      }
+    } else if (!multiple && name.substr(-2, 2) === '[]') {
+      name = name.substr(0, name.length - 2);
     }
   }
   return name;
@@ -62225,10 +61517,8 @@ parseValidator:'number', initialize:function() {
   me.callParent([value, errors, skipLazy]);
   if (minValue != null && value < minValue) {
     errors.push(String.format(me.minValueText, minValue));
-  } else {
-    if (maxValue != null && value > maxValue) {
-      errors.push(String.format(me.maxValueText, maxValue));
-    }
+  } else if (maxValue != null && value > maxValue) {
+    errors.push(String.format(me.maxValueText, maxValue));
   }
 }, onKeyDown:function(e) {
   var me = this, raw;
@@ -62299,19 +61589,15 @@ Ext.define('Ext.form.Borders', {mixinId:'formborders', config:{fieldSeparators:n
   var bodyElement = this.bodyElement, cls = this.fieldSeparatorsCls;
   if (fieldSeparators) {
     bodyElement.addCls(cls);
-  } else {
-    if (oldFieldSeparators) {
-      bodyElement.removeCls(cls);
-    }
+  } else if (oldFieldSeparators) {
+    bodyElement.removeCls(cls);
   }
 }, updateInputBorders:function(inputBorders, oldInputBorders) {
   var bodyElement = this.bodyElement, cls = this.noInputBordersCls;
   if (inputBorders === false) {
     bodyElement.addCls(cls);
-  } else {
-    if (oldInputBorders === false) {
-      bodyElement.removeCls(cls);
-    }
+  } else if (oldInputBorders === false) {
+    bodyElement.removeCls(cls);
   }
 }});
 Ext.define('Ext.theme.material.form.Borders', {override:'Ext.form.Borders', config:{fieldSeparators:false, inputBorders:true}});
@@ -62356,28 +61642,26 @@ Ext.define('Ext.field.Panel', {extend:Ext.Panel, xtype:'fieldpanel', isFieldPane
       }
     }});
     load.apply(window, args);
-  } else {
-    if (url) {
-      return Ext.Ajax.request({url:url, timeout:(options.timeout || me.getTimeout()) * 1000, method:options.method || 'GET', autoAbort:options.autoAbort, headers:Ext.apply({'Content-Type':'application/x-www-form-urlencoded; charset\x3dUTF-8'}, options.headers || {}), callback:function(callbackOptions, success, response) {
-        var responseText = response.responseText, statusResult = Ext.data.request.Ajax.parseStatus(response.status, response);
-        me.setMasked(false);
-        if (success) {
-          if (statusResult && responseText.length === 0) {
-            success = true;
-          } else {
-            response = Ext.decode(responseText);
-            success = !!response.success;
-          }
-          if (success) {
-            successFn(response, response.data);
-          } else {
-            failureFn(response, response.data);
-          }
+  } else if (url) {
+    return Ext.Ajax.request({url:url, timeout:(options.timeout || me.getTimeout()) * 1000, method:options.method || 'GET', autoAbort:options.autoAbort, headers:Ext.apply({'Content-Type':'application/x-www-form-urlencoded; charset\x3dUTF-8'}, options.headers || {}), callback:function(callbackOptions, success, response) {
+      var responseText = response.responseText, statusResult = Ext.data.request.Ajax.parseStatus(response.status, response);
+      me.setMasked(false);
+      if (success) {
+        if (statusResult && responseText.length === 0) {
+          success = true;
         } else {
-          failureFn(response, responseText);
+          response = Ext.decode(responseText);
+          success = !!response.success;
         }
-      }});
-    }
+        if (success) {
+          successFn(response, response.data);
+        } else {
+          failureFn(response, response.data);
+        }
+      } else {
+        failureFn(response, responseText);
+      }
+    }});
   }
 }, getParams:function(params) {
   return Ext.apply({}, params, this.getBaseParams());
@@ -62457,16 +61741,14 @@ Ext.define('Ext.field.RadioGroup', {extend:Ext.field.FieldGroupContainer, xtype:
         break;
       }
     }
-  } else {
-    if (Ext.isObject(value)) {
-      for (name in value) {
-        rbValue = value[name];
-        for (i = 0; i < len; i++) {
-          item = items[i];
-          if (item.getName() === name && rbValue === item.getValue()) {
-            item.setChecked(true);
-            break;
-          }
+  } else if (Ext.isObject(value)) {
+    for (name in value) {
+      rbValue = value[name];
+      for (i = 0; i < len; i++) {
+        item = items[i];
+        if (item.getName() === name && rbValue === item.getValue()) {
+          item.setChecked(true);
+          break;
         }
       }
     }
@@ -62969,10 +62251,8 @@ Ext.define('Ext.grid.Location', {extend:Ext.dataview.Location, isGridLocation:tr
     if (targetIndex === columns.length || !me.child.isGridRow) {
       if (rowIndex < me.view.store.getData().count() - 1) {
         result = me.getUpdatedLocation(columns[0], rowIndex + 1);
-      } else {
-        if (wrap) {
-          result = me.getUpdatedLocation(columns[0], 0);
-        }
+      } else if (wrap) {
+        result = me.getUpdatedLocation(columns[0], 0);
       }
     } else {
       result = me.getUpdatedLocation(columns[targetIndex], rowIndex);
@@ -63006,10 +62286,8 @@ Ext.define('Ext.grid.Location', {extend:Ext.dataview.Location, isGridLocation:tr
     if (targetIndex === -1 || !me.child.isGridRow) {
       if (rowIndex > 0) {
         result = me.getUpdatedLocation(columns[columns.length - 1], rowIndex - 1);
-      } else {
-        if (wrap) {
-          result = me.getUpdatedLocation(columns[columns.length - 1], me.view.store.getData().count() - 1);
-        }
+      } else if (wrap) {
+        result = me.getUpdatedLocation(columns[columns.length - 1], me.view.store.getData().count() - 1);
       }
     } else {
       result = me.getUpdatedLocation(columns[targetIndex], rowIndex);
@@ -63064,10 +62342,8 @@ Ext.define('Ext.grid.NavigationModel', {extend:Ext.dataview.NavigationModel, ali
   if (location != null && !location.isGridLocation) {
     if (Ext.isArray(location)) {
       location = {column:location[0], record:location[1]};
-    } else {
-      if (typeof location === 'number') {
-        location = view.store.getAt(location);
-      }
+    } else if (typeof location === 'number') {
+      location = view.store.getAt(location);
     }
     location = me.createLocation(location);
     if (event) {
@@ -63166,10 +62442,8 @@ Ext.define('Ext.grid.NavigationModel', {extend:Ext.dataview.NavigationModel, ali
     if (!(e.shiftKey && location.isFirstColumn())) {
       this.movePrevious({event:e});
     }
-  } else {
-    if (Ext.fly(e.target).isInputField()) {
-      return true;
-    }
+  } else if (Ext.fly(e.target).isInputField()) {
+    return true;
   }
 }, onKeyRight:function(e) {
   var location = this.location, isSimpleTree = location.isLastColumn() && location.isFirstColumn();
@@ -63183,10 +62457,8 @@ Ext.define('Ext.grid.NavigationModel', {extend:Ext.dataview.NavigationModel, ali
     if (!(e.shiftKey && location.isLastColumn())) {
       this.moveNext({event:e});
     }
-  } else {
-    if (Ext.fly(e.target).isInputField()) {
-      return true;
-    }
+  } else if (Ext.fly(e.target).isInputField()) {
+    return true;
   }
 }, onKeyF2:function(e) {
   if (this.location.actionable) {
@@ -63373,10 +62645,8 @@ cellSelector:'.' + Ext.baseCSSPrefix + 'gridcell', defaultBindProperty:'value', 
       value = me.refreshValue(context);
       if (value !== me.getValue()) {
         me.setValue(value);
-      } else {
-        if (me.writeValue) {
-          me.writeValue();
-        }
+      } else if (me.writeValue) {
+        me.writeValue();
       }
       me.refreshContext = was;
     }
@@ -63385,15 +62655,13 @@ cellSelector:'.' + Ext.baseCSSPrefix + 'gridcell', defaultBindProperty:'value', 
   var me = this, record = context.record, dataIndex = context.dataIndex, value, dirty, modified;
   if (context.summary) {
     value = me.summarize(context);
-  } else {
-    if (record && dataIndex) {
-      value = record.get(dataIndex);
-      modified = record.modified;
-      dirty = !!(modified && modified.hasOwnProperty(dataIndex));
-      if (dirty !== me.$dirty) {
-        me.toggleCls(me.dirtyCls, dirty);
-        me.$dirty = dirty;
-      }
+  } else if (record && dataIndex) {
+    value = record.get(dataIndex);
+    modified = record.modified;
+    dirty = !!(modified && modified.hasOwnProperty(dataIndex));
+    if (dirty !== me.$dirty) {
+      me.toggleCls(me.dirtyCls, dirty);
+      me.$dirty = dirty;
     }
   }
   return value;
@@ -63421,38 +62689,28 @@ cellSelector:'.' + Ext.baseCSSPrefix + 'gridcell', defaultBindProperty:'value', 
     }
     if (Ext.isFunction(summaryType)) {
       value = summaryType.call(store, store.data.items.slice(), dataIndex);
+    } else if (summaryType === 'count') {
+      value = store.getCount();
+    } else if (me.storeMethodRe.test(summaryType)) {
+      value = store[summaryType](dataIndex);
     } else {
-      if (summaryType === 'count') {
-        value = store.getCount();
-      } else {
-        if (me.storeMethodRe.test(summaryType)) {
-          value = store[summaryType](dataIndex);
-        } else {
-          value = Ext.callback(summaryType, null, [store.data.items.slice(), dataIndex, store], 0, me);
-        }
-      }
+      value = Ext.callback(summaryType, null, [store.data.items.slice(), dataIndex, store], 0, me);
     }
+  } else if (!(summaryType = column.getSummary())) {
+    if (dataIndex) {
+      value = context.record.get(dataIndex);
+    }
+  } else if (!dataIndex) {
+    Ext.raise('Cannot use summary config w/o summaryDataIndex or dataIndex (' + context.grid.getId() + ')');
   } else {
-    if (!(summaryType = column.getSummary())) {
-      if (dataIndex) {
-        value = context.record.get(dataIndex);
+    if (group) {
+      if (group.isVirtualGroup) {
+        Ext.raise('Cannot calculate a group summary on a virtual store (' + context.grid.getId() + ')');
       }
-    } else {
-      if (!dataIndex) {
-        Ext.raise('Cannot use summary config w/o summaryDataIndex or dataIndex (' + context.grid.getId() + ')');
-      } else {
-        if (group) {
-          if (group.isVirtualGroup) {
-            Ext.raise('Cannot calculate a group summary on a virtual store (' + context.grid.getId() + ')');
-          }
-        } else {
-          if (store.getRemoteSort()) {
-            Ext.raise('Cannot calculate a summary on a remoteSort store (' + context.grid.getId() + ')');
-          }
-        }
-        value = summaryType.calculate(records, dataIndex, 'data', 0, records.length);
-      }
+    } else if (store.getRemoteSort()) {
+      Ext.raise('Cannot calculate a summary on a remoteSort store (' + context.grid.getId() + ')');
     }
+    value = summaryType.calculate(records, dataIndex, 'data', 0, records.length);
   }
   return value;
 }}, deprecated:{'6.5':{configs:{innerStyle:'bodyStyle', innerCls:'bodyCls'}}}});
@@ -63474,11 +62732,9 @@ Ext.define('Ext.grid.cell.Text', {extend:Ext.grid.cell.Base, xtype:'textcell', c
       }
     }
     format = column.getSummaryFormatter() || format;
-  } else {
-    if (v === 0 && zeroValue !== null) {
-      v = zeroValue;
-      format = null;
-    }
+  } else if (v === 0 && zeroValue !== null) {
+    v = zeroValue;
+    format = null;
   }
   if (format) {
     v = format(v);
@@ -63556,10 +62812,8 @@ Ext.define('Ext.grid.cell.Cell', {extend:Ext.grid.cell.Text, xtype:'gridcell', c
     return function(v) {
       return fmt(v, me.getScope() || me.resolveListenerScope());
     };
-  } else {
-    if (typeof fmt !== 'function') {
-      Ext.raise('Invalid formatter');
-    }
+  } else if (typeof fmt !== 'function') {
+    Ext.raise('Invalid formatter');
   }
   return fmt;
 }, updateTpl:function() {
@@ -63578,46 +62832,44 @@ Ext.define('Ext.grid.cell.Cell', {extend:Ext.grid.cell.Text, xtype:'gridcell', c
   var me = this, context = me.refreshContext, dataIndex = context.dataIndex, column = context.column, record = context.record, zeroValue = me.getZeroValue(), raw = v, summary = context.summary, args, data, format, renderer, scope, tpl;
   if (!context.summary && v === 0 && zeroValue !== null) {
     raw = zeroValue;
-  } else {
-    if (!(tpl = me.getTpl(context))) {
-      format = me.getFormatter();
-      if (summary) {
-        renderer = column.getSummaryRenderer();
-        if (renderer) {
-          format = null;
-          scope = context.scope;
-          if (typeof renderer === 'string') {
-            raw = Ext.callback(renderer, scope, [v, context], 0, column);
+  } else if (!(tpl = me.getTpl(context))) {
+    format = me.getFormatter();
+    if (summary) {
+      renderer = column.getSummaryRenderer();
+      if (renderer) {
+        format = null;
+        scope = context.scope;
+        if (typeof renderer === 'string') {
+          raw = Ext.callback(renderer, scope, [v, context], 0, column);
+          me.friendly = false;
+        } else {
+          raw = renderer.call(scope || me, v, context);
+          if (renderer.length > 1) {
             me.friendly = false;
-          } else {
-            raw = renderer.call(scope || me, v, context);
-            if (renderer.length > 1) {
-              me.friendly = false;
-            }
-          }
-        }
-        format = column.getSummaryFormatter() || format;
-      } else {
-        renderer = me.getRenderer();
-        if (renderer) {
-          args = [v, record, dataIndex, me, column];
-          scope = me.getScope() || context.scope;
-          if (typeof renderer === 'function') {
-            raw = renderer.apply(scope || column, args);
-          } else {
-            raw = Ext.callback(renderer, scope, args, 0, me);
           }
         }
       }
-      if (format) {
-        raw = format(raw);
-      }
+      format = column.getSummaryFormatter() || format;
     } else {
-      if (!(data = context.data)) {
-        context.data = data = context.summary ? context.record.getData() : context.grid.gatherData(context.record);
+      renderer = me.getRenderer();
+      if (renderer) {
+        args = [v, record, dataIndex, me, column];
+        scope = me.getScope() || context.scope;
+        if (typeof renderer === 'function') {
+          raw = renderer.apply(scope || column, args);
+        } else {
+          raw = Ext.callback(renderer, scope, args, 0, me);
+        }
       }
-      raw = tpl.apply(data);
     }
+    if (format) {
+      raw = format(raw);
+    }
+  } else {
+    if (!(data = context.data)) {
+      context.data = data = context.summary ? context.record.getData() : context.grid.gatherData(context.record);
+    }
+    raw = tpl.apply(data);
   }
   if (raw != null) {
     raw = String(raw);
@@ -63634,10 +62886,8 @@ Ext.define('Ext.grid.cell.Cell', {extend:Ext.grid.cell.Text, xtype:'gridcell', c
       for (i = depends.length; !bound && i-- > 0;) {
         bound = !!fields[depends[i]];
       }
-    } else {
-      if (!me.friendly) {
-        bound = true;
-      }
+    } else if (!me.friendly) {
+      bound = true;
     }
   }
   return bound;
@@ -63950,10 +63200,8 @@ Ext.define('Ext.grid.HeaderContainer', {extend:Ext.Container, xtype:'headerconta
   if (selector) {
     if (typeof selector === 'string') {
       result = Ext.ComponentQuery.query(selector, result);
-    } else {
-      if (Ext.isFunction(selector)) {
-        return result.filter(selector);
-      }
+    } else if (Ext.isFunction(selector)) {
+      return result.filter(selector);
     }
   }
   return result;
@@ -64238,14 +63486,10 @@ Ext.define('Ext.grid.HeaderContainer', {extend:Ext.Container, xtype:'headerconta
     if (sorter) {
       if (isGrouped && !isGroupedHeader) {
         sorter = null;
-      } else {
-        if (isGrouped && isGroupedHeader) {
-          sorter = grouper;
-        } else {
-          if (!(sorters.contains(sorter) || grouper === sorter)) {
-            sorter = null;
-          }
-        }
+      } else if (isGrouped && isGroupedHeader) {
+        sorter = grouper;
+      } else if (!(sorters.contains(sorter) || grouper === sorter)) {
+        sorter = null;
       }
     }
     header.setSortState(sorter);
@@ -64486,10 +63730,8 @@ summaryCell:null, summaryDataIndex:null, summaryFormatter:null, summaryRenderer:
     if (Ext.isArray(menu)) {
       extraItems = menu;
       menu = null;
-    } else {
-      if (!menu.items) {
-        menu = {items:menu};
-      }
+    } else if (!menu.items) {
+      menu = {items:menu};
     }
     if (!(gridColumnMenu = grid.getColumnMenu())) {
       menu = menu ? Ext.clone(menu) : {};
@@ -64506,22 +63748,16 @@ summaryCell:null, summaryDataIndex:null, summaryFormatter:null, summaryRenderer:
       if (columnScopeRe.test(s = item.getHandler() || '')) {
         item.setHandler(s.substr(7));
         item.scope = me;
-      } else {
-        if (gridScopeRe.test(s)) {
-          item.setHandler(s.substr(5));
+      } else if (gridScopeRe.test(s)) {
+        item.setHandler(s.substr(5));
+        item.scope = grid;
+      } else if (item.isMenuCheckItem) {
+        if (columnScopeRe.test(s = item.getCheckHandler() || '')) {
+          item.setCheckHandler(s.substr(7));
+          item.scope = me;
+        } else if (gridScopeRe.test(s)) {
+          item.setCheckHandler(s.substr(5));
           item.scope = grid;
-        } else {
-          if (item.isMenuCheckItem) {
-            if (columnScopeRe.test(s = item.getCheckHandler() || '')) {
-              item.setCheckHandler(s.substr(7));
-              item.scope = me;
-            } else {
-              if (gridScopeRe.test(s)) {
-                item.setCheckHandler(s.substr(5));
-                item.scope = grid;
-              }
-            }
-          }
         }
       }
     }
@@ -64631,15 +63867,13 @@ summaryCell:null, summaryDataIndex:null, summaryFormatter:null, summaryRenderer:
     if (sorter.isGrouper) {
       sorter.toggle();
       store.group(sorter);
+    } else if (sorterIndex === 0) {
+      me.toggleSortState();
     } else {
-      if (sorterIndex === 0) {
-        me.toggleSortState();
+      if (isSorted) {
+        store.sort(sorter, 'prepend');
       } else {
-        if (isSorted) {
-          store.sort(sorter, 'prepend');
-        } else {
-          me.sort('ASC');
-        }
+        me.sort('ASC');
       }
     }
   }
@@ -64694,10 +63928,8 @@ summaryCell:null, summaryDataIndex:null, summaryFormatter:null, summaryRenderer:
     } else {
       return me.sort(direction);
     }
-  } else {
-    if (sorter) {
-      sorters.remove(sorter);
-    }
+  } else if (sorter) {
+    sorters.remove(sorter);
   }
   if (!store.getRemoteSort()) {
     me.getRootHeaderCt().setSortState();
@@ -64792,13 +64024,11 @@ summaryCell:null, summaryDataIndex:null, summaryFormatter:null, summaryRenderer:
       editor = Ext.clone(editor);
       if (!editor.xtype) {
         defaults = me.getEditorDefaults();
-        defaults = Ext.clone(field && defaults[field.type] || defaults['default']);
+        defaults = Ext.clone(field && defaults[field.type] || defaults["default"]);
         if (textAlign in defaults && defaults[textAlign] === undef) {
           defaults[textAlign] = me.getAlign();
-        } else {
-          if (bodyAlign in defaults && defaults[bodyAlign] === undef) {
-            defaults[bodyAlign] = me.getAlign();
-          }
+        } else if (bodyAlign in defaults && defaults[bodyAlign] === undef) {
+          defaults[bodyAlign] = me.getAlign();
         }
         Ext.applyIf(editor, defaults);
       }
@@ -64905,10 +64135,8 @@ summaryCell:null, summaryDataIndex:null, summaryFormatter:null, summaryRenderer:
     groupers = store.getGroupers(false);
     if (groupers) {
       result = groupers.get(me.getDataIndex());
-    } else {
-      if (store.getGroupField() === me.getDataIndex()) {
-        result = me.getGrouper() || store.getGrouper();
-      }
+    } else if (store.getGroupField() === me.getDataIndex()) {
+      result = me.getGrouper() || store.getGrouper();
     }
     if (result) {
       me.sortState = result.getDirection();
@@ -65005,7 +64233,7 @@ summaryCell:null, summaryDataIndex:null, summaryFormatter:null, summaryRenderer:
   cell = cell && cell.printValue ? cell : me.getScratchCell();
   return cell.printValue(value);
 }, autoSize:function() {
-  var me = this, max = Math.max, textMatrics = new Ext.util.TextMetrics, widthAdjust = 0, maxWidth = 0, innerCells = me.getCells(), grid = me.getGrid(), columnIndex, textWidth, rec, store, len, i, records, idx, paddedWidth, cellElement;
+  var me = this, max = Math.max, textMatrics = new Ext.util.TextMetrics(), widthAdjust = 0, maxWidth = 0, innerCells = me.getCells(), grid = me.getGrid(), columnIndex, textWidth, rec, store, len, i, records, idx, paddedWidth, cellElement;
   if (!me.getResizable()) {
     return;
   }
@@ -65023,15 +64251,13 @@ summaryCell:null, summaryDataIndex:null, summaryFormatter:null, summaryRenderer:
         textWidth = textMatrics.getWidth(records[i].get(columnIndex));
         maxWidth = max(maxWidth, textWidth);
       }
-    } else {
-      if (Ext.isObject(records)) {
-        for (idx in records) {
-          rec = records[idx].records;
-          len = rec && rec.length;
-          for (i = 0; i < len; i++) {
-            textWidth = textMatrics.getWidth(rec[i].get(columnIndex));
-            maxWidth = max(maxWidth, textWidth);
-          }
+    } else if (Ext.isObject(records)) {
+      for (idx in records) {
+        rec = records[idx].records;
+        len = rec && rec.length;
+        for (i = 0; i < len; i++) {
+          textWidth = textMatrics.getWidth(rec[i].get(columnIndex));
+          maxWidth = max(maxWidth, textWidth);
         }
       }
     }
@@ -65091,23 +64317,21 @@ summaryCell:null, summaryDataIndex:null, summaryFormatter:null, summaryRenderer:
       sorter.toggle();
       store.group(sorter);
     }
-  } else {
-    if (direction) {
-      if (sorter) {
-        if (sorters.indexOf(sorter) !== 0) {
-          sorter.setDirection(direction);
-        }
-      } else {
-        me.setSorter({property:me.getSortParam(), direction:'ASC'});
-        sorter = me.getSorter();
+  } else if (direction) {
+    if (sorter) {
+      if (sorters.indexOf(sorter) !== 0) {
+        sorter.setDirection(direction);
       }
-      store.sort(sorter, mode || grid.getMultiColumnSort() ? 'multi' : 'replace');
     } else {
-      if (sorter) {
-        sorters.remove(sorter);
-        if (!store.getRemoteSort()) {
-          me.getRootHeaderCt().setSortState();
-        }
+      me.setSorter({property:me.getSortParam(), direction:'ASC'});
+      sorter = me.getSorter();
+    }
+    store.sort(sorter, mode || grid.getMultiColumnSort() ? 'multi' : 'replace');
+  } else {
+    if (sorter) {
+      sorters.remove(sorter);
+      if (!store.getRemoteSort()) {
+        me.getRootHeaderCt().setSortState();
       }
     }
   }
@@ -65231,12 +64455,10 @@ summaryCell:null, summaryDataIndex:null, summaryFormatter:null, summaryRenderer:
       if (fn) {
         this[setter](fn.bind(scope));
         ret = fn.apply(scope, arguments);
+      } else if (!scope) {
+        Ext.raise('Cannot resolve scope for column ' + me.id);
       } else {
-        if (!scope) {
-          Ext.raise('Cannot resolve scope for column ' + me.id);
-        } else {
-          Ext.raise('No such method "' + name + '" on ' + scope.$className);
-        }
+        Ext.raise('No such method "' + name + '" on ' + scope.$className);
       }
       return ret;
     };
@@ -65853,30 +65075,24 @@ Ext.define('Ext.grid.selection.SelectionExtender', {maskBox:{}, constructor:func
       scrollBy[1] = scrollDelta;
       scrollTask.start();
     }
-  } else {
-    if (me.lastXY[1] < scrollClientRegion.top + thresh) {
-      if (me.extendY) {
-        scrollBy[1] = -scrollDelta;
-        scrollTask.start();
-      }
-    } else {
-      if (me.lastXY[0] > scrollClientRegion.right - thresh) {
-        if (me.extendX) {
-          scrollBy[0] = scrollDelta;
-          scrollTask.start();
-        }
-      } else {
-        if (me.lastXY[0] < scrollClientRegion.left + thresh) {
-          if (me.extendX) {
-            scrollBy[0] = -scrollDelta;
-            scrollTask.start();
-          }
-        } else {
-          scrollBy[0] = scrollBy[1] = 0;
-          scrollTask.stop();
-        }
-      }
+  } else if (me.lastXY[1] < scrollClientRegion.top + thresh) {
+    if (me.extendY) {
+      scrollBy[1] = -scrollDelta;
+      scrollTask.start();
     }
+  } else if (me.lastXY[0] > scrollClientRegion.right - thresh) {
+    if (me.extendX) {
+      scrollBy[0] = scrollDelta;
+      scrollTask.start();
+    }
+  } else if (me.lastXY[0] < scrollClientRegion.left + thresh) {
+    if (me.extendX) {
+      scrollBy[0] = -scrollDelta;
+      scrollTask.start();
+    }
+  } else {
+    scrollBy[0] = scrollBy[1] = 0;
+    scrollTask.stop();
   }
   if (overCell && overCell.getCell() && !overCell.equals(me.lastOverCell)) {
     me.lastOverCell = overCell;
@@ -65932,52 +65148,44 @@ Ext.define('Ext.grid.selection.SelectionExtender', {maskBox:{}, constructor:func
     maskBox.y = overCell.getY();
     maskBox.width = selRegion.right - selRegion.left;
     maskBox.height = selRegion.top - overCell.getY();
+  } else if (curPos.recordIndex > me.endPos.recordIndex && me.extendY) {
+    me.extensionDescriptor = {type:'rows', start:extensionStart.clone({record:me.endPos.recordIndex + 1}), end:extensionEnd.clone({record:curPos.recordIndex}), rows:curPos.recordIndex - me.endPos.recordIndex, mousePosition:me.lastXY};
+    me.mask.dom.style.borderTopWidth = '0';
+    maskBox.x = selRegion.x;
+    maskBox.y = selRegion.bottom;
+    maskBox.width = selRegion.right - selRegion.left;
+    maskBox.height = overCell.getRegion().bottom - selRegion.bottom;
+  } else if (!preventReduce && curPos.recordIndex < me.endPos.recordIndex && me.extendY && curPos.columnIndex === me.endPos.columnIndex) {
+    me.extensionDescriptor = {type:'rows', start:extensionStart.clone({record:me.endPos.recordIndex}), end:extensionEnd.clone({record:curPos.recordIndex + 1}), rows:-1, mousePosition:me.lastXY, reduce:true};
+    me.mask.dom.style.borderTopWidth = '0';
+    maskBox.x = selRegion.x;
+    maskBox.y = selRegion.top;
+    maskBox.width = selRegion.right - selRegion.left;
+    maskBox.height = overCell.getRegion().bottom - selRegion.top;
   } else {
-    if (curPos.recordIndex > me.endPos.recordIndex && me.extendY) {
-      me.extensionDescriptor = {type:'rows', start:extensionStart.clone({record:me.endPos.recordIndex + 1}), end:extensionEnd.clone({record:curPos.recordIndex}), rows:curPos.recordIndex - me.endPos.recordIndex, mousePosition:me.lastXY};
-      me.mask.dom.style.borderTopWidth = '0';
-      maskBox.x = selRegion.x;
-      maskBox.y = selRegion.bottom;
-      maskBox.width = selRegion.right - selRegion.left;
-      maskBox.height = overCell.getRegion().bottom - selRegion.bottom;
+    if (curPos.columnIndex < me.firstPos.columnIndex && me.extendX) {
+      me.extensionDescriptor = {type:'columns', start:extensionStart.clone({column:curPos.columnIndex}), end:extensionEnd.clone({column:me.firstPos.columnIndex - 1}), columns:curPos.columnIndex - me.firstPos.columnIndex, mousePosition:me.lastXY};
+      me.mask.dom.style.borderRightWidth = '0';
+      maskBox.x = overCell.getX();
+      maskBox.y = selRegion.top;
+      maskBox.width = selRegion.left - overCell.getX();
+      maskBox.height = selRegion.bottom - selRegion.top;
+    } else if (curPos.columnIndex > me.endPos.columnIndex && me.extendX) {
+      me.extensionDescriptor = {type:'columns', start:extensionStart.clone({column:me.endPos.columnIndex + 1}), end:extensionEnd.clone({column:curPos.columnIndex}), columns:curPos.columnIndex - me.endPos.columnIndex, mousePosition:me.lastXY};
+      me.mask.dom.style.borderLeftWidth = '0';
+      maskBox.x = selRegion.right;
+      maskBox.y = selRegion.top;
+      maskBox.width = overCell.getRegion().right - selRegion.right;
+      maskBox.height = selRegion.bottom - selRegion.top;
+    } else if (!preventReduce && curPos.columnIndex < me.endPos.columnIndex && me.extendX) {
+      me.extensionDescriptor = {type:'columns', start:extensionStart.clone({column:me.firstPos.columnIndex}), end:extensionEnd.clone({column:curPos.columnIndex}), columns:-1, mousePosition:me.lastXY, reduce:true};
+      me.mask.dom.style.borderLeftWidth = '0';
+      maskBox.x = selRegion.left;
+      maskBox.y = selRegion.top;
+      maskBox.width = overCell.getRegion().right - selRegion.left;
+      maskBox.height = selRegion.bottom - selRegion.top;
     } else {
-      if (!preventReduce && curPos.recordIndex < me.endPos.recordIndex && me.extendY && curPos.columnIndex === me.endPos.columnIndex) {
-        me.extensionDescriptor = {type:'rows', start:extensionStart.clone({record:me.endPos.recordIndex}), end:extensionEnd.clone({record:curPos.recordIndex + 1}), rows:-1, mousePosition:me.lastXY, reduce:true};
-        me.mask.dom.style.borderTopWidth = '0';
-        maskBox.x = selRegion.x;
-        maskBox.y = selRegion.top;
-        maskBox.width = selRegion.right - selRegion.left;
-        maskBox.height = overCell.getRegion().bottom - selRegion.top;
-      } else {
-        if (curPos.columnIndex < me.firstPos.columnIndex && me.extendX) {
-          me.extensionDescriptor = {type:'columns', start:extensionStart.clone({column:curPos.columnIndex}), end:extensionEnd.clone({column:me.firstPos.columnIndex - 1}), columns:curPos.columnIndex - me.firstPos.columnIndex, mousePosition:me.lastXY};
-          me.mask.dom.style.borderRightWidth = '0';
-          maskBox.x = overCell.getX();
-          maskBox.y = selRegion.top;
-          maskBox.width = selRegion.left - overCell.getX();
-          maskBox.height = selRegion.bottom - selRegion.top;
-        } else {
-          if (curPos.columnIndex > me.endPos.columnIndex && me.extendX) {
-            me.extensionDescriptor = {type:'columns', start:extensionStart.clone({column:me.endPos.columnIndex + 1}), end:extensionEnd.clone({column:curPos.columnIndex}), columns:curPos.columnIndex - me.endPos.columnIndex, mousePosition:me.lastXY};
-            me.mask.dom.style.borderLeftWidth = '0';
-            maskBox.x = selRegion.right;
-            maskBox.y = selRegion.top;
-            maskBox.width = overCell.getRegion().right - selRegion.right;
-            maskBox.height = selRegion.bottom - selRegion.top;
-          } else {
-            if (!preventReduce && curPos.columnIndex < me.endPos.columnIndex && me.extendX) {
-              me.extensionDescriptor = {type:'columns', start:extensionStart.clone({column:me.firstPos.columnIndex}), end:extensionEnd.clone({column:curPos.columnIndex}), columns:-1, mousePosition:me.lastXY, reduce:true};
-              me.mask.dom.style.borderLeftWidth = '0';
-              maskBox.x = selRegion.left;
-              maskBox.y = selRegion.top;
-              maskBox.width = overCell.getRegion().right - selRegion.left;
-              maskBox.height = selRegion.bottom - selRegion.top;
-            } else {
-              me.extensionDescriptor = null;
-            }
-          }
-        }
-      }
+      me.extensionDescriptor = null;
     }
   }
   if (view.hasListeners.selectionextenderdrag) {
@@ -66013,18 +65221,16 @@ Ext.define('Ext.grid.cell.Number', {extend:Ext.grid.cell.Text, xtype:'numbercell
   var me = this, context = me.refreshContext, dataIndex = context ? context.column.getDataIndex() : me.dataIndex, column = context ? context.column : me.column, record = context ? context.record : me.record, zeroValue = me.getZeroValue(), hasValue = value || value === 0, renderer = me.getRenderer(), args, scope;
   if (value === 0 && zeroValue !== null) {
     value = zeroValue || '';
-  } else {
-    if (renderer) {
-      args = [value, record, dataIndex, me, column];
-      scope = me.getScope() || context.scope;
-      if (typeof renderer === 'function') {
-        value = renderer.apply(scope || column, args);
-      } else {
-        value = Ext.callback(renderer, scope, args, 0, me);
-      }
+  } else if (renderer) {
+    args = [value, record, dataIndex, me, column];
+    scope = me.getScope() || context.scope;
+    if (typeof renderer === 'function') {
+      value = renderer.apply(scope || column, args);
     } else {
-      value = hasValue ? Ext.util.Format.number(value, this.getFormat()) : '';
+      value = Ext.callback(renderer, scope, args, 0, me);
     }
+  } else {
+    value = hasValue ? Ext.util.Format.number(value, this.getFormat()) : '';
   }
   return value;
 }});
@@ -66285,10 +65491,8 @@ Ext.define('Ext.grid.selection.Model', {extend:Ext.dataview.selection.Model, ali
       }
       this.setSelection(config);
       result = this.callParent();
-    } else {
-      if (reset) {
-        result.clear(true);
-      }
+    } else if (reset) {
+      result.clear(true);
     }
   }
   return result;
@@ -66299,34 +65503,30 @@ Ext.define('Ext.grid.selection.Model', {extend:Ext.dataview.selection.Model, ali
   var me = this, sel = me.getSelection(), isSelected = false, range, columns, i;
   if (header === this.numbererColumn) {
     me.toggleAll(header, e);
-  } else {
-    if (me.getColumns() && header !== me.getCheckbox()) {
-      if (e.shiftKey && sel && sel.lastColumnSelected) {
-        if (!e.ctrlKey) {
-          sel.clear();
-        }
-        headerCt = me.getView().getHeaderContainer();
-        columns = headerCt.getColumns();
-        range = Ext.Array.sort([headerCt.indexOfLeaf(sel.lastColumnSelected), headerCt.indexOf(header)], Ext.Array.numericSortFn);
-        for (i = range[0]; i <= range[1]; i++) {
-          me.selectColumn(columns[i], true);
-        }
-      } else {
-        isSelected = me.isColumnSelected(header);
-        if (!e.ctrlKey) {
-          sel.clear();
-        } else {
-          if (isSelected) {
-            me.deselectColumn(header);
-            me.getSelection().lastColumnSelected = null;
-          }
-        }
-        if (!isSelected || !e.ctrlKey && e.pointerType !== 'touch') {
-          me.selectColumn(header, e.ctrlKey);
-          me.getSelection().lastColumnSelected = header;
-        }
-        me.updateSelectionExtender();
+  } else if (me.getColumns() && header !== me.getCheckbox()) {
+    if (e.shiftKey && sel && sel.lastColumnSelected) {
+      if (!e.ctrlKey) {
+        sel.clear();
       }
+      headerCt = me.getView().getHeaderContainer();
+      columns = headerCt.getColumns();
+      range = Ext.Array.sort([headerCt.indexOfLeaf(sel.lastColumnSelected), headerCt.indexOf(header)], Ext.Array.numericSortFn);
+      for (i = range[0]; i <= range[1]; i++) {
+        me.selectColumn(columns[i], true);
+      }
+    } else {
+      isSelected = me.isColumnSelected(header);
+      if (!e.ctrlKey) {
+        sel.clear();
+      } else if (isSelected) {
+        me.deselectColumn(header);
+        me.getSelection().lastColumnSelected = null;
+      }
+      if (!isSelected || !e.ctrlKey && e.pointerType !== 'touch') {
+        me.selectColumn(header, e.ctrlKey);
+        me.getSelection().lastColumnSelected = header;
+      }
+      me.updateSelectionExtender();
     }
   }
 }, toggleAll:function(header, e) {
@@ -66346,14 +65546,10 @@ Ext.define('Ext.grid.selection.Model', {extend:Ext.dataview.selection.Model, ali
   var me = this, record = location.record, column = location.column;
   if (me.getCells()) {
     me.selectCells(location, location);
-  } else {
-    if (me.getRows() && record) {
-      this.select(record);
-    } else {
-      if (me.getColumns() && column) {
-        me.selectColumn(column);
-      }
-    }
+  } else if (me.getRows() && record) {
+    this.select(record);
+  } else if (me.getColumns() && column) {
+    me.selectColumn(column);
   }
 }, updateHeaderState:function() {
   var me = this, store = me.getStore(), sel = me.getSelection(), isChecked = false, checkHd = me.getCheckbox(), storeCount;
@@ -66426,16 +65622,12 @@ Ext.define('Ext.grid.selection.Model', {extend:Ext.dataview.selection.Model, ali
   if (me.getRows()) {
     sel = me.getSelection('records');
     doSelect = true;
-  } else {
-    if (me.getCells()) {
-      sel = me.getSelection('cells');
-      doSelect = true;
-    } else {
-      if (me.getColumns()) {
-        sel = me.getSelection('columns');
-        doSelect = true;
-      }
-    }
+  } else if (me.getCells()) {
+    sel = me.getSelection('cells');
+    doSelect = true;
+  } else if (me.getColumns()) {
+    sel = me.getSelection('columns');
+    doSelect = true;
   }
   if (doSelect) {
     sel.selectAll(suppressEvent);
@@ -66495,16 +65687,14 @@ Ext.define('Ext.grid.selection.Model', {extend:Ext.dataview.selection.Model, ali
       } else {
         me.clearSelections();
       }
-    } else {
-      if (selData.isColumns) {
-        selectionChanged = false;
-        selData.eachColumn(function(column) {
-          if (!column.isVisible() || !view.isAncestor(column)) {
-            me.remove(column);
-            selectionChanged = true;
-          }
-        });
-      }
+    } else if (selData.isColumns) {
+      selectionChanged = false;
+      selData.eachColumn(function(column) {
+        if (!column.isVisible() || !view.isAncestor(column)) {
+          me.remove(column);
+          selectionChanged = true;
+        }
+      });
     }
   }
   Ext.on('idle', selectionChanged ? me.fireSelectionChange : me.updateSelectionExtender, me, {single:true});
@@ -66540,37 +65730,29 @@ Ext.define('Ext.grid.selection.Model', {extend:Ext.dataview.selection.Model, ali
       if (me.getRows()) {
         if (e.shiftKey && me.isSelected(location.record)) {
           resumingSelection = true;
-        } else {
-          if (!e.shiftKey && !isCheckClick && me.checkboxOnly) {
-            return;
-          }
+        } else if (!e.shiftKey && !isCheckClick && me.checkboxOnly) {
+          return;
         }
         sel = me.getSelection('records');
         if (!e.shiftKey && !e.ctrlKey && !isCheckClick) {
           sel.clear();
         }
-      } else {
-        if (me.getColumns()) {
-          sel = me.getSelection('columns');
-          if (e.shiftKey && me.isColumnSelected(location.column)) {
-            resumingSelection = true;
-          } else {
-            if (!e.shiftKey && !e.ctrlKey && !isCheckClick) {
-              sel.clear();
-            }
-          }
-        } else {
-          return false;
+      } else if (me.getColumns()) {
+        sel = me.getSelection('columns');
+        if (e.shiftKey && me.isColumnSelected(location.column)) {
+          resumingSelection = true;
+        } else if (!e.shiftKey && !e.ctrlKey && !isCheckClick) {
+          sel.clear();
         }
+      } else {
+        return false;
       }
     } else {
       sel = me.getSelection('cells');
       if (e.shiftKey && me.isCellSelected(location.recordIndex, location.columnIndex)) {
         resumingSelection = true;
-      } else {
-        if (!e.shiftKey) {
-          sel.clear();
-        }
+      } else if (!e.shiftKey) {
+        sel.clear();
       }
     }
     if (!resumingSelection) {
@@ -66631,24 +65813,20 @@ Ext.define('Ext.grid.selection.Model', {extend:Ext.dataview.selection.Model, ali
           selData.setRangeStart(overRowIdx);
         }
       }
-    } else {
-      if (selData.isCells) {
-        if (recChange || colChange) {
-          if (lastOverRecord) {
-            selData.setRangeEnd(location);
-          } else {
-            selData.setRangeStart(location);
-          }
+    } else if (selData.isCells) {
+      if (recChange || colChange) {
+        if (lastOverRecord) {
+          selData.setRangeEnd(location);
+        } else {
+          selData.setRangeStart(location);
         }
-      } else {
-        if (selData.isColumns) {
-          if (colChange) {
-            if (lastOverColumn) {
-              selData.setRangeEnd(location.column);
-            } else {
-              selData.setRangeStart(location.column);
-            }
-          }
+      }
+    } else if (selData.isColumns) {
+      if (colChange) {
+        if (lastOverColumn) {
+          selData.setRangeEnd(location.column);
+        } else {
+          selData.setRangeStart(location.column);
         }
       }
     }
@@ -66664,24 +65842,18 @@ Ext.define('Ext.grid.selection.Model', {extend:Ext.dataview.selection.Model, ali
     scrollBy[0] = 0;
     scrollBy[1] = scrollDelta;
     scrollTask.start();
-  } else {
-    if (point[1] < scrollClientRegion.top + thresh) {
-      scrollBy[0] = 0;
-      scrollBy[1] = -scrollDelta;
-      scrollTask.start();
-    } else {
-      if (point[0] > scrollClientRegion.right - thresh) {
-        scrollBy[0] = scrollDelta;
-        scrollBy[1] = 0;
-        scrollTask.start();
-      } else {
-        if (point[0] < scrollClientRegion.left + thresh) {
-          scrollBy[0] = -scrollDelta;
-          scrollBy[1] = 0;
-          scrollTask.start();
-        }
-      }
-    }
+  } else if (point[1] < scrollClientRegion.top + thresh) {
+    scrollBy[0] = 0;
+    scrollBy[1] = -scrollDelta;
+    scrollTask.start();
+  } else if (point[0] > scrollClientRegion.right - thresh) {
+    scrollBy[0] = scrollDelta;
+    scrollBy[1] = 0;
+    scrollTask.start();
+  } else if (point[0] < scrollClientRegion.left + thresh) {
+    scrollBy[0] = -scrollDelta;
+    scrollBy[1] = 0;
+    scrollTask.start();
   }
 }, doAutoScroll:function(e, view) {
   var me = this, scrollClientRegion = view.getScrollable().getElement().getClientRegion(), scroller = view.getScrollable(), xy = [], cell, location;
@@ -66729,10 +65901,8 @@ Ext.define('Ext.grid.selection.Model', {extend:Ext.dataview.selection.Model, ali
     me.mousemoveListener.destroy();
     if ((sel = me.getSelection()) && sel.isRows) {
       sel.addRange(true);
-    } else {
-      if (changedCell) {
-        me.fireSelectionChange();
-      }
+    } else if (changedCell) {
+      me.fireSelectionChange();
     }
   }
 }, onNavigate:function(navigateEvent) {
@@ -66794,15 +65964,13 @@ Ext.define('Ext.grid.selection.Model', {extend:Ext.dataview.selection.Model, ali
         sel.setRangeEnd(location);
         adding = count < sel.getCount();
         selectionChanged = true;
-      } else {
-        if (selectingColumns) {
-          sel = me.getSelection('columns');
-          if (!sel.getCount()) {
-            sel.setRangeStart(toColumn);
-          }
-          sel.setRangeEnd(toColumn);
-          selectionChanged = true;
+      } else if (selectingColumns) {
+        sel = me.getSelection('columns');
+        if (!sel.getCount()) {
+          sel.setRangeStart(toColumn);
         }
+        sel.setRangeEnd(toColumn);
+        selectionChanged = true;
       }
     }
   } else {
@@ -66833,20 +66001,18 @@ Ext.define('Ext.grid.selection.Model', {extend:Ext.dataview.selection.Model, ali
         sel = me.getSelection('cells', true);
         sel.setRangeStart(location);
         selectionChanged = true;
-      } else {
-        if (selectingColumns) {
-          sel = me.getSelection('columns');
-          if (ctrlKey) {
-            if (sel.isSelected(toColumn)) {
-              sel.remove(toColumn);
-            } else {
-              sel.add(toColumn);
-            }
+      } else if (selectingColumns) {
+        sel = me.getSelection('columns');
+        if (ctrlKey) {
+          if (sel.isSelected(toColumn)) {
+            sel.remove(toColumn);
           } else {
-            sel.setRangeStart(toColumn);
+            sel.add(toColumn);
           }
-          selectionChanged = true;
+        } else {
+          sel.setRangeStart(toColumn);
         }
+        selectionChanged = true;
       }
     }
   }
@@ -66884,14 +66050,10 @@ Ext.define('Ext.grid.selection.Model', {extend:Ext.dataview.selection.Model, ali
     view = selection.view;
     if (selection.isRows) {
       selection.eachRow(view.onRowSelect, view);
-    } else {
-      if (selection.isColumns) {
-        selection.eachCell(view.onCellSelect, view);
-      } else {
-        if (selection.isCells) {
-          selection.eachCell(view.onCellSelect, view);
-        }
-      }
+    } else if (selection.isColumns) {
+      selection.eachCell(view.onCellSelect, view);
+    } else if (selection.isCells) {
+      selection.eachCell(view.onCellSelect, view);
     }
   }
 }, updateRows:function(rows) {
@@ -66919,10 +66081,8 @@ Ext.define('Ext.grid.selection.Model', {extend:Ext.dataview.selection.Model, ali
 }, updateMode:function(mode) {
   if (mode === 'multi') {
     this.setDrag(this.getInitialConfig().drag);
-  } else {
-    if (!this.isConfiguring) {
-      this.setDrag(false);
-    }
+  } else if (!this.isConfiguring) {
+    this.setDrag(false);
   }
 }, fireSelectionChange:function(records, selecting) {
   var me = this, view = me.getView(), sel = me.getSelection();
@@ -67059,31 +66219,27 @@ Ext.define('Ext.grid.plugin.ColumnResizing', {extend:Ext.Component, alias:['plug
       }
       me.touchListeners = Ext.getBody().on({touchEnd:'onTouchEnd', touchMove:'onTouchMove', scope:me, destroyable:true});
     }
-  } else {
-    if (e.multitouch && me._resizeColumn) {
-      me.endResize();
-    }
+  } else if (e.multitouch && me._resizeColumn) {
+    me.endResize();
   }
 }, onTouchMove:function(e) {
   var me = this, column = me._resizeColumn, resizeAmount;
   if (e.isMultitouch) {
     me.endResize();
-  } else {
-    if (column) {
-      resizeAmount = e.getX() - me._startX;
-      me.currentColumnWidth = Math.max(Math.ceil(me._startColumnWidth + resizeAmount), me._minColumnWidth);
-      if (me._maxColumnWidth) {
-        me.currentColumnWidth = Math.min(me.currentColumnWidth, me._maxColumnWidth);
-      }
-      if (me.getRealtime()) {
-        column.setWidth(me.currentColumnWidth);
-        column.renderElement.setWidth(me.currentColumnWidth);
-      } else {
-        me._resizeMarker.setLeft(column.el.getOffsetsTo(me._resizeMarkerParent)[0] + me.currentColumnWidth);
-      }
-      column.resizing = true;
-      e.claimGesture();
+  } else if (column) {
+    resizeAmount = e.getX() - me._startX;
+    me.currentColumnWidth = Math.max(Math.ceil(me._startColumnWidth + resizeAmount), me._minColumnWidth);
+    if (me._maxColumnWidth) {
+      me.currentColumnWidth = Math.min(me.currentColumnWidth, me._maxColumnWidth);
     }
+    if (me.getRealtime()) {
+      column.setWidth(me.currentColumnWidth);
+      column.renderElement.setWidth(me.currentColumnWidth);
+    } else {
+      me._resizeMarker.setLeft(column.el.getOffsetsTo(me._resizeMarkerParent)[0] + me.currentColumnWidth);
+    }
+    column.resizing = true;
+    e.claimGesture();
   }
 }, onTouchEnd:function(e) {
   var column = this._resizeColumn, hasResized = e.getX() !== this._startX;
@@ -67105,10 +66261,8 @@ Ext.define('Ext.grid.plugin.ColumnResizing', {extend:Ext.Component, alias:['plug
       if (column.resizing) {
         column.setWidth(me.currentColumnWidth);
         column.resizing = false;
-      } else {
-        if (me._resizeColumn.getWidth() === me._startColumnWidth) {
-          column.setWidth(me._startColumnWidth);
-        }
+      } else if (me._resizeColumn.getWidth() === me._startColumnWidth) {
+        column.setWidth(me._startColumnWidth);
       }
     }
     column.removeCls(me.resizingCls);
@@ -67147,10 +66301,8 @@ Ext.define('Ext.dd.ScrollManager', {singleton:true, scrollTowardsPointer:functio
   if (direction === -1) {
     if (posY >= scrollAmount) {
       scroller.scrollBy(0, -scrollAmount, animate);
-    } else {
-      if (posY > 0) {
-        scroller.scrollBy(0, -posY, animate);
-      }
+    } else if (posY > 0) {
+      scroller.scrollBy(0, -posY, animate);
     }
   } else {
     maxPosition = scroller.getMaxPosition();
@@ -67290,10 +66442,8 @@ Ext.define('Ext.grid.RowHeader', {extend:Ext.dataview.ItemHeader, xtype:'rowhead
     if (column.printValue) {
       data.html = column.printValue(data.value);
     }
-  } else {
-    if (data) {
-      data.html = Ext.htmlEncode(data.name);
-    }
+  } else if (data) {
+    data.html = Ext.htmlEncode(data.name);
   }
   return data;
 }}});
@@ -67819,10 +66969,8 @@ Ext.define('Ext.grid.GridDropZone', {extend:Ext.plugin.dd.DropZone, onDragMove:f
     for (i = 0; i < len; i++) {
       records[i] = records[i].copy();
     }
-  } else {
-    if (removeRecord) {
-      sourceView.getStore().remove(records);
-    }
+  } else if (removeRecord) {
+    sourceView.getStore().remove(records);
   }
   if (record && position) {
     index = targetStore.indexOf(record);
@@ -67883,13 +67031,11 @@ Ext.define('Ext.grid.HeaderDropZone', {extend:Ext.grid.GridDropZone, dropMarkerC
     if (diff > 0.5) {
       return false;
     }
-  } else {
-    if (targetCmp === nextSibling) {
-      box = nextSibling.element.getBox();
-      diff = (cursor.x - box.left) / box.width;
-      if (diff <= 0.5) {
-        return false;
-      }
+  } else if (targetCmp === nextSibling) {
+    box = nextSibling.element.getBox();
+    diff = (cursor.x - box.left) / box.width;
+    if (diff <= 0.5) {
+      return false;
     }
   }
   return true;
@@ -68006,10 +67152,8 @@ Ext.define('Ext.grid.plugin.CellEditing', {extend:Ext.plugin.Abstract, alias:['p
           selModel = me.getGrid().getSelectable();
           if (selModel.getCells()) {
             selModel.selectCells(location, location);
-          } else {
-            if (selModel.getRows()) {
-              selModel.select(location.record);
-            }
+          } else if (selModel.getRows()) {
+            selModel.select(location.record);
           }
         }
         me.$previousEditor = editor;
@@ -68059,7 +67203,7 @@ Ext.define('Ext.grid.rowedit.Bar', {extend:Ext.Panel, xtype:'roweditorbar', isRo
   });
   return out;
 }, getDriver:function(cell) {
-  var me = this, drivers = me.plugin.getDrivers(), driver = drivers[cell.xtype], base = drivers['default'], xtypes = cell.xtypes, i;
+  var me = this, drivers = me.plugin.getDrivers(), driver = drivers[cell.xtype], base = drivers["default"], xtypes = cell.xtypes, i;
   if (cell.driver) {
     driver = Ext.apply({}, drivers[cell.driver], driver);
   }
@@ -68184,7 +67328,7 @@ Ext.define('Ext.grid.rowedit.Bar', {extend:Ext.Panel, xtype:'roweditorbar', isRo
     }
   }
 }, syncColumn:function(col, context) {
-  var me = this, adapters = me.plugin.getAdapters(), defaultAdapter = adapters['default'], cellConfig = col.getCell(), cellType = cellConfig.xtype, adapter = adapters[cellType], itemId = col.$editorItemId, dataIndex = col.getDataIndex(), record = context.record, width = col.getComputedWidth(), gap = context.gap, cell, driver, gapCmp, value;
+  var me = this, adapters = me.plugin.getAdapters(), defaultAdapter = adapters["default"], cellConfig = col.getCell(), cellType = cellConfig.xtype, adapter = adapters[cellType], itemId = col.$editorItemId, dataIndex = col.getDataIndex(), record = context.record, width = col.getComputedWidth(), gap = context.gap, cell, driver, gapCmp, value;
   context.total += width;
   value = record.data[dataIndex];
   if (!itemId || !(cell = me.getComponent(itemId))) {
@@ -68195,10 +67339,8 @@ Ext.define('Ext.grid.rowedit.Bar', {extend:Ext.Panel, xtype:'roweditorbar', isRo
       }
       if (driver && driver.read) {
         value = driver.read(record, col, me);
-      } else {
-        if (!dataIndex) {
-          adapter = null;
-        }
+      } else if (!dataIndex) {
+        adapter = null;
       }
       if (adapter !== null) {
         cell[driver.prop] = driver.convert(value, col);
@@ -68331,16 +67473,12 @@ Ext.define('Ext.plugin.TabGuard', {extend:Ext.plugin.Abstract, alias:'plugin.tab
   }
   if (nodes.length === 0) {
     nextFocus = el;
+  } else if (from === el.dom) {
+    forward = target === beforeGuard.dom;
+  } else if (el.contains(from)) {
+    forward = !!e.forwardTab;
   } else {
-    if (from === el.dom) {
-      forward = target === beforeGuard.dom;
-    } else {
-      if (el.contains(from)) {
-        forward = !!e.forwardTab;
-      } else {
-        forward = target === beforeGuard.dom;
-      }
-    }
+    forward = target === beforeGuard.dom;
   }
   nextFocus = nextFocus || (forward ? nodes[0] : nodes[nodes.length - 1]);
   if (nextFocus) {
@@ -68423,7 +67561,7 @@ defaultType:'roweditorbar', html:null, nameHolder:true, plugins:'tabguard', tabG
       me.activeRange = activeRange = store.createActiveRange();
     }
     me.recordIndex = recordIndex = store.indexOf(record);
-    activeRange['goto'](recordIndex, recordIndex + 1);
+    activeRange["goto"](recordIndex, recordIndex + 1);
     me.syncTop();
     me.ensureFocus();
     me.activeLocation.fireEditEvent('beginedit', me);
@@ -68488,7 +67626,7 @@ defaultType:'roweditorbar', html:null, nameHolder:true, plugins:'tabguard', tabG
   }
   if (rec && me.isVisible() && (phantom || dirty)) {
     if (phantom) {
-      autoConfirm = dirty ? autoConfirm.populated : autoConfirm['new'];
+      autoConfirm = dirty ? autoConfirm.populated : autoConfirm["new"];
     } else {
       autoConfirm = autoConfirm.updated;
     }
@@ -68498,24 +67636,18 @@ defaultType:'roweditorbar', html:null, nameHolder:true, plugins:'tabguard', tabG
       if (message) {
         Ext.toast(message);
       }
-    } else {
-      if (autoConfirm === true) {
-        keep = true;
-      }
+    } else if (autoConfirm === true) {
+      keep = true;
     }
     if (ret) {
       if (location.beforeEdit(me) === false) {
         ret = false;
-      } else {
-        if (keep) {
-          ret = me.saveChanges();
-        }
+      } else if (keep) {
+        ret = me.saveChanges();
       }
     }
-  } else {
-    if (location.beforeEdit(me) === false) {
-      ret = false;
-    }
+  } else if (location.beforeEdit(me) === false) {
+    ret = false;
   }
   return ret;
 }, gotoRecord:function(recordIndex) {
@@ -68613,12 +67745,10 @@ defaultType:'roweditorbar', html:null, nameHolder:true, plugins:'tabguard', tabG
       maxTop -= Ext.scrollbar.height();
     }
     if (!grid.infinite) {
+    } else if (item) {
+      top = item.$y0 - visibleTop;
     } else {
-      if (item) {
-        top = item.$y0 - visibleTop;
-      } else {
-        top = me.recordIndex < grid.getTopRenderedIndex() ? 0 : visibleHeight;
-      }
+      top = me.recordIndex < grid.getTopRenderedIndex() ? 0 : visibleHeight;
     }
     if (grid.isGrouping()) {
       decoration = grid.getPinnedHeader();
@@ -68721,10 +67851,10 @@ isRowEditorCell:true, bodyAlign:'center', label:null, $hasValue:true}, rownumber
       full.updated = 'discard';
     }
     if (!('new' in full)) {
-      full['new'] = full.updated;
+      full["new"] = full.updated;
     }
     if (!('populated' in full)) {
-      full.populated = full['new'];
+      full.populated = full["new"];
     }
   }
   Ext.each(['new', 'populated', 'updated'], function(key) {
@@ -68775,10 +67905,8 @@ right:'90', bottom:'0', left:'270'}, dockCls:{top:Ext.baseCSSPrefix + 'docked-to
   if (title) {
     if (!newTitle || typeof newTitle === 'string') {
       title.setText(newTitle || '');
-    } else {
-      if (newTitle) {
-        title.setConfig(newTitle);
-      }
+    } else if (newTitle) {
+      title.setConfig(newTitle);
     }
   } else {
     title = Ext.create(this.createTitle(newTitle));
@@ -68913,17 +68041,13 @@ Ext.define('Ext.scroll.NativeScroller', {extend:Ext.scroll.Scroller, alias:'scro
     }
     if (x === 'scroll') {
       hasXScroll = true;
-    } else {
-      if (x) {
-        hasXScroll = dom.scrollWidth > dom.clientWidth;
-      }
+    } else if (x) {
+      hasXScroll = dom.scrollWidth > dom.clientWidth;
     }
     if (y === 'scroll') {
       hasYScroll = true;
-    } else {
-      if (y) {
-        hasYScroll = dom.scrollHeight > dom.clientHeight;
-      }
+    } else if (y) {
+      hasYScroll = dom.scrollHeight > dom.clientHeight;
     }
     if (hasXScroll) {
       height = scrollbarSize.height;
@@ -69069,7 +68193,7 @@ Ext.define('Ext.scroll.NativeScroller', {extend:Ext.scroll.Scroller, alias:'scro
       x = me.convertX(x);
     }
     if (animate) {
-      deferred = new Ext.Deferred;
+      deferred = new Ext.Deferred();
       translatable.on('animationend', function() {
         if (me.destroyed) {
           deferred.reject();
@@ -69203,7 +68327,7 @@ Ext.define('Ext.scroll.NativeScroller', {extend:Ext.scroll.Scroller, alias:'scro
   Ext.getViewportScroller = function(autoCreate) {
     var scroller = Scroller.viewport;
     if (!scroller && autoCreate !== false) {
-      Scroller.viewport = scroller = new NativeScroller;
+      Scroller.viewport = scroller = new NativeScroller();
       NativeScroller.initViewportScroller();
     }
     return scroller;
@@ -69325,13 +68449,11 @@ style:'opacity: 0'}, applyHideAnimation:function(hideAnimation) {
   if (value < 0) {
     length = round(baseLength + baseLength * value / clientSize);
     position = 0;
+  } else if (value > maxScrollPosition) {
+    length = round(baseLength - baseLength * (value - maxScrollPosition) / clientSize);
+    position = maxPosition + baseLength - length;
   } else {
-    if (value > maxScrollPosition) {
-      length = round(baseLength - baseLength * (value - maxScrollPosition) / clientSize);
-      position = maxPosition + baseLength - length;
-    } else {
-      position = round(value / maxScrollPosition * maxPosition);
-    }
+    position = round(value / maxScrollPosition * maxPosition);
   }
   me[names.translate](position);
   el[names.setLength](length);
@@ -69441,10 +68563,8 @@ touchScrollCount:0, isMouseEvent:{mousedown:1, mousemove:1, mouseup:1}, listener
   var me = this;
   if (immediate) {
     me.doRefresh();
-  } else {
-    if (!me.refreshScheduled) {
-      me.refreshScheduled = Ext.on(me.scheduleRefresh);
-    }
+  } else if (!me.refreshScheduled) {
+    me.refreshScheduled = Ext.on(me.scheduleRefresh);
   }
   return me;
 }, updateDisabled:function(disabled) {
@@ -69501,19 +68621,15 @@ touchScrollCount:0, isMouseEvent:{mousedown:1, mousemove:1, mouseup:1}, listener
   oldYIndicator = indicators.y;
   if (xIndicator) {
     indicators.x = Ext.Factory.scrollindicator.update(oldXIndicator, xIndicator, me, 'createXIndicator', defaultsConfig);
-  } else {
-    if (oldXIndicator) {
-      oldXIndicator.destroy();
-      indicators.x = null;
-    }
+  } else if (oldXIndicator) {
+    oldXIndicator.destroy();
+    indicators.x = null;
   }
   if (yIndicator) {
     indicators.y = Ext.Factory.scrollindicator.update(oldYIndicator, yIndicator, me, 'createYIndicator', defaultsConfig);
-  } else {
-    if (oldYIndicator) {
-      oldYIndicator.destroy();
-      indicators.y = null;
-    }
+  } else if (oldYIndicator) {
+    oldYIndicator.destroy();
+    indicators.y = null;
   }
   return indicators;
 }, updateIndicators:function(indicators) {
@@ -69614,7 +68730,7 @@ touchScrollCount:0, isMouseEvent:{mousedown:1, mousemove:1, mouseup:1}, listener
     translationX = me.convertX(-x);
     translationY = -y;
     if (animate) {
-      deferred = new Ext.Deferred;
+      deferred = new Ext.Deferred();
       translatable.on('animationend', function() {
         if (me.destroyed) {
           deferred.reject();
@@ -69629,16 +68745,12 @@ touchScrollCount:0, isMouseEvent:{mousedown:1, mousemove:1, mouseup:1}, listener
       me.onScroll(x, y);
       if (me.isWheeling || me.isScrollbarScrolling) {
         me.onScrollEnd();
-      } else {
-        if (!isDragging) {
-          me.doOnScrollEnd();
-        }
+      } else if (!isDragging) {
+        me.doOnScrollEnd();
       }
     }
-  } else {
-    if (animate && animate.callback) {
-      animate.callback();
-    }
+  } else if (animate && animate.callback) {
+    animate.callback();
   }
   return ret || Ext.Deferred.getCachedResolved();
 }, getAnimationEasing:function(axis, e) {
@@ -69648,10 +68760,8 @@ touchScrollCount:0, isMouseEvent:{mousedown:1, mousemove:1, mouseup:1}, listener
   var me = this, currentPosition = me.position[axis], minPosition = me.getMinUserPosition()[axis], maxPosition = me.getMaxUserPosition()[axis], maxAbsVelocity = me.getMaxAbsoluteVelocity(), boundValue = null, dragEndTime = me.dragEndTime, velocity = e.flick.velocity[axis], isX = axis === 'x', easingConfig, easing;
   if (currentPosition < minPosition) {
     boundValue = minPosition;
-  } else {
-    if (currentPosition > maxPosition) {
-      boundValue = maxPosition;
-    }
+  } else if (currentPosition > maxPosition) {
+    boundValue = maxPosition;
   }
   if (isX) {
     currentPosition = me.convertX(currentPosition);
@@ -69667,10 +68777,8 @@ touchScrollCount:0, isMouseEvent:{mousedown:1, mousemove:1, mouseup:1}, listener
   }
   if (velocity < -maxAbsVelocity) {
     velocity = -maxAbsVelocity;
-  } else {
-    if (velocity > maxAbsVelocity) {
-      velocity = maxAbsVelocity;
-    }
+  } else if (velocity > maxAbsVelocity) {
+    velocity = maxAbsVelocity;
   }
   easing = me.getMomentumEasing()[axis];
   easingConfig = {startTime:dragEndTime, startValue:-currentPosition, startVelocity:velocity * 1.5, minMomentumValue:-maxPosition, maxMomentumValue:0};
@@ -69717,18 +68825,14 @@ touchScrollCount:0, isMouseEvent:{mousedown:1, mousemove:1, mouseup:1}, listener
     now = Ext.Date.now(), distance;
     if (current < min) {
       current *= restrictFactor;
-    } else {
-      if (current > max) {
-        distance = current - max;
-        current = max + distance * restrictFactor;
-      }
+    } else if (current > max) {
+      distance = current - max;
+      current = max + distance * restrictFactor;
     }
     if (current > last) {
       dragDirection[axis] = 1;
-    } else {
-      if (current < last) {
-        dragDirection[axis] = -1;
-      }
+    } else if (current < last) {
+      dragDirection[axis] = -1;
     }
     if (lastDirection !== 0 && dragDirection[axis] !== lastDirection || now - flickStartTime[axis] > startMomentumResetTime) {
       flickStartPosition[axis] = old;
@@ -69822,10 +68926,8 @@ touchScrollCount:0, isMouseEvent:{mousedown:1, mousemove:1, mouseup:1}, listener
         physicalX = logicalX - offsetX;
         if (physicalX > pageSizeX) {
           me.setOffsetX(Math.floor(logicalX / pageSizeX) * pageSizeX);
-        } else {
-          if (physicalX < -pageSizeX) {
-            me.setOffsetX(Math.ceil(logicalX / pageSizeX) * pageSizeX);
-          }
+        } else if (physicalX < -pageSizeX) {
+          me.setOffsetX(Math.ceil(logicalX / pageSizeX) * pageSizeX);
         }
       }
       pageSizeY = pageSize.y;
@@ -69834,10 +68936,8 @@ touchScrollCount:0, isMouseEvent:{mousedown:1, mousemove:1, mouseup:1}, listener
         physicalY = logicalY - offsetY;
         if (physicalY > pageSizeY) {
           me.setOffsetY(Math.floor(logicalY / pageSizeY) * pageSizeY);
-        } else {
-          if (physicalY < -pageSizeY) {
-            me.setOffsetY(Math.ceil(logicalY / pageSizeY) * pageSizeY);
-          }
+        } else if (physicalY < -pageSizeY) {
+          me.setOffsetY(Math.ceil(logicalY / pageSizeY) * pageSizeY);
         }
       }
     }
@@ -69892,10 +68992,8 @@ touchScrollCount:0, isMouseEvent:{mousedown:1, mousemove:1, mouseup:1}, listener
     me.isWheeling = self.isWheeling = true;
     me.doScrollTo(x, y);
     e.preventDefault();
-  } else {
-    if (me.isScrolling) {
-      me.onScrollEnd();
-    }
+  } else if (me.isScrolling) {
+    me.onScrollEnd();
   }
 }, refreshAxes:function() {
   var me = this, flags = me.isAxisEnabledFlags, size = me.getSize(), clientSize = me.getClientSize(), maxX, maxY, x, y;
@@ -69909,25 +69007,17 @@ touchScrollCount:0, isMouseEvent:{mousedown:1, mousemove:1, mouseup:1}, listener
   me.setMaxPosition({x:maxX, y:maxY});
   if (x === true || x === 'auto') {
     flags.x = !!maxX;
-  } else {
-    if (x === false) {
-      flags.x = false;
-    } else {
-      if (x === 'scroll') {
-        flags.x = true;
-      }
-    }
+  } else if (x === false) {
+    flags.x = false;
+  } else if (x === 'scroll') {
+    flags.x = true;
   }
   if (y === true || y === 'auto') {
     flags.y = !!maxY;
-  } else {
-    if (y === false) {
-      flags.y = false;
-    } else {
-      if (y === 'scroll') {
-        flags.y = true;
-      }
-    }
+  } else if (y === false) {
+    flags.y = false;
+  } else if (y === 'scroll') {
+    flags.y = true;
   }
   me.setMaxUserPosition({x:flags.x ? maxX : 0, y:flags.y ? maxY : 0});
   if (!me.isConfiguring) {
@@ -70018,10 +69108,8 @@ touchScrollCount:0, isMouseEvent:{mousedown:1, mousemove:1, mouseup:1}, listener
           }
         }
         scrollbarCorner.show();
-      } else {
-        if (scrollbarCorner) {
-          scrollbarCorner.hide();
-        }
+      } else if (scrollbarCorner) {
+        scrollbarCorner.hide();
       }
       if (xIndicator) {
         xIndicator.setStyle('visibility', '');
@@ -70061,17 +69149,13 @@ touchScrollCount:0, isMouseEvent:{mousedown:1, mousemove:1, mouseup:1}, listener
   var minPosition = me.getMinUserPosition(), maxPosition = me.getMaxUserPosition(), minX = minPosition.x, minY = minPosition.y, maxX = maxPosition.x, maxY = maxPosition.y, x = Math.round(position.x), y = Math.round(position.y);
   if (x < minX) {
     x = minX;
-  } else {
-    if (x > maxX) {
-      x = maxX;
-    }
+  } else if (x > maxX) {
+    x = maxX;
   }
   if (y < minY) {
     y = minY;
-  } else {
-    if (y > maxY) {
-      y = maxY;
-    }
+  } else if (y > maxY) {
+    y = maxY;
   }
   me.doScrollTo(x, y);
 }, snapToSlot:function() {
@@ -70254,10 +69338,8 @@ Ext.define('Ext.state.Builder', {constructor:function(parent, name) {
           parent[name] = data = {};
         }
       }
-    } else {
-      if (create) {
-        data = {};
-      }
+    } else if (create) {
+      data = {};
     }
     me.data = data;
   }
@@ -70266,7 +69348,7 @@ Ext.define('Ext.state.Builder', {constructor:function(parent, name) {
 Ext.define('Ext.tip.Manager', {config:{tooltip:{xtype:'tooltip', align:'', anchorToTarget:false, anchor:false, closeAction:'hide', quickShowInterval:0, maxWidth:'80vw'}, overflowTip:{align:'l-r?', anchor:true, showOnTap:true}}, interceptTitles:false, constructor:function(config) {
   var me = this, tip;
   me.initConfig(config);
-  me._fly = new Ext.dom.Fly;
+  me._fly = new Ext.dom.Fly();
   me.tip = tip = Ext.create(me.createTooltip());
   tip.allowRealign = false;
   tip.on({beforeshow:'onBeforeShow', hovertarget:'onHoverTarget', scope:me});
@@ -70283,10 +69365,8 @@ Ext.define('Ext.tip.Manager', {config:{tooltip:{xtype:'tooltip', align:'', ancho
   var n = --this.disabled;
   if (n === 0) {
     this.getTooltip().enable();
-  } else {
-    if (n < 0) {
-      this.disabled = 0;
-    }
+  } else if (n < 0) {
+    this.disabled = 0;
   }
 }, destroy:function() {
   var me = this;
@@ -70350,46 +69430,42 @@ Ext.define('Ext.tip.Manager', {config:{tooltip:{xtype:'tooltip', align:'', ancho
           dom.removeAttribute('title');
         }
       }
-    } else {
-      if (dom.hasAttribute('data-qoverflow')) {
-        text = fly.dom.innerHTML;
-        if (property !== 'html') {
-          tipDefaults = Ext.apply({}, me.getOverflowTip(), tipDefaults);
-        }
-        if (!property) {
-          if (!me.hasTextOverflow(dom)) {
-            return false;
-          }
+    } else if (dom.hasAttribute('data-qoverflow')) {
+      text = fly.dom.innerHTML;
+      if (property !== 'html') {
+        tipDefaults = Ext.apply({}, me.getOverflowTip(), tipDefaults);
+      }
+      if (!property) {
+        if (!me.hasTextOverflow(dom)) {
+          return false;
         }
       }
     }
     if (text) {
       if (property === 'html') {
         ret = text;
-      } else {
-        if (property) {
-          item = propertyMap[property];
-          if (item.prop) {
-            if (dom.hasAttribute(item.prop)) {
-              ret = item.parse(dom.getAttribute(item.prop));
-            }
+      } else if (property) {
+        item = propertyMap[property];
+        if (item.prop) {
+          if (dom.hasAttribute(item.prop)) {
+            ret = item.parse(dom.getAttribute(item.prop));
           }
-        } else {
-          ret = data = {html:text};
-          for (name in propertyMap) {
-            if (name !== 'html') {
-              item = propertyMap[name];
-              value = null;
-              if (item.prop) {
-                if (dom.hasAttribute(item.prop)) {
-                  value = item.parse(dom.getAttribute(item.prop));
-                }
+        }
+      } else {
+        ret = data = {html:text};
+        for (name in propertyMap) {
+          if (name !== 'html') {
+            item = propertyMap[name];
+            value = null;
+            if (item.prop) {
+              if (dom.hasAttribute(item.prop)) {
+                value = item.parse(dom.getAttribute(item.prop));
               }
-              if (value === null) {
-                value = tipDefaults[name];
-              }
-              data[name] = value;
             }
+            if (value === null) {
+              value = tipDefaults[name];
+            }
+            data[name] = value;
           }
         }
       }
@@ -70479,10 +69555,8 @@ Ext.define('Ext.theme.Material', {singleton:true, _autoUpdateMeta:true, _default
     } else {
       Ext.Logger.warn('Base color weight: ' + colorsConfig.baseWeight + ' is not a valid weight', this);
     }
-  } else {
-    if (colorsConfig.base) {
-      Ext.Logger.warn('Base color: ' + colorsConfig.base + ' is not a valid material color', this);
-    }
+  } else if (colorsConfig.base) {
+    Ext.Logger.warn('Base color: ' + colorsConfig.base + ' is not a valid material color', this);
   }
   if (accentColor) {
     if (accentColor[colorsConfig.accentWeight]) {
@@ -70490,10 +69564,8 @@ Ext.define('Ext.theme.Material', {singleton:true, _autoUpdateMeta:true, _default
     } else {
       Ext.Logger.warn('Accent color weight: ' + colorsConfig.accentWeight + ' is not a valid weight', this);
     }
-  } else {
-    if (colorsConfig.accent) {
-      Ext.Logger.warn('Accent color: ' + colorsConfig.accent + ' is not a valid material color', this);
-    }
+  } else if (colorsConfig.accent) {
+    Ext.Logger.warn('Accent color: ' + colorsConfig.accent + ' is not a valid material color', this);
   }
   if (colorsConfig.darkMode !== null) {
     obj['dark-mode'] = colorsConfig.darkMode ? 'true' : 'false';
@@ -70545,19 +69617,19 @@ Ext.define(null, {override:'Ext.Component', initialize:function() {
   me.callParent(arguments);
 }});
 Ext.define(null, {override:'Ext.Container', setReadOnly:function(value) {
-  this.getInnerItems().forEach((innerItem) => {
+  this.getInnerItems().forEach(innerItem => {
     if (innerItem.setReadOnly) {
       innerItem.setReadOnly(value);
     }
   });
 }, setDisabled:function(value) {
-  this.getInnerItems().forEach((innerItem) => {
+  this.getInnerItems().forEach(innerItem => {
     if (innerItem.setDisabled) {
       innerItem.setDisabled(value);
     }
   });
 }, setRequired:function(value) {
-  this.getInnerItems().forEach((innerItem) => {
+  this.getInnerItems().forEach(innerItem => {
     if (innerItem.setRequired) {
       innerItem.setRequired(value);
     }
@@ -70570,7 +69642,7 @@ Ext.define(null, {override:'Ext.field.Field', config:{errorTarget:'under', label
   if (formComponentConfig) {
     const icon = formComponentConfig ? formComponentConfig.icon : undefined;
     if (icon) {
-      config.label = `\x3ci class\x3d"${icon}"\x3e\x3c/i\x3e\x26nbsp ${config.label}`;
+      config.label = `<i class="${icon}"></i>&nbsp ${config.label}`;
     }
     if (formComponentConfig.onChange) {
       const onChangeConfig = formComponentConfig.onChange;
@@ -70585,10 +69657,8 @@ Ext.define(null, {override:'Ext.field.Field', config:{errorTarget:'under', label
           let stateUrl;
           if (onChangeConfig.data && onChangeConfig.data.stateUrl) {
             stateUrl = onChangeConfig.data.stateUrl;
-          } else {
-            if (me.formConfig.configuration) {
-              stateUrl = me.formConfig.configuration.stateUrl;
-            }
+          } else if (me.formConfig.configuration) {
+            stateUrl = me.formConfig.configuration.stateUrl;
           }
           if (stateUrl) {
             const currentValue = me.getValue();
@@ -70598,13 +69668,11 @@ Ext.define(null, {override:'Ext.field.Field', config:{errorTarget:'under', label
             Ext.log({msg:'stateURL is missing in form configuration', level:'warn'});
           }
         };
-      } else {
-        if (action === 'validate') {
-          handler = () => {
-            const rendererController = me.up('formsRenderer').getController();
-            rendererController.validateData(me);
-          };
-        }
+      } else if (action === 'validate') {
+        handler = () => {
+          const rendererController = me.up('formsRenderer').getController();
+          rendererController.validateData(me);
+        };
       }
       if (handler) {
         let bufferTime;
@@ -70639,7 +69707,7 @@ Ext.define('FormsRenderer.Application', {extend:Ext.app.Application, name:'Forms
     }
   });
 }});
-window.addEventListener('message', (event) => {
+window.addEventListener('message', event => {
   console.warn(event.data);
   if (Ext.isString(event.data) && event.isTrusted !== false) {
     const dataJson = Ext.JSON.decode(event.data, true);
@@ -70705,10 +69773,8 @@ Ext.define('FormsRenderer.view.form.component.Container', {extend:Ext.field.Pane
   const me = this;
   if (String(layout).toUpperCase() === 'HORIZONTAL') {
     return me.callParent(['hbox', oldLayout]);
-  } else {
-    if (String(layout).toUpperCase() === 'VERTICAL') {
-      return me.callParent(['vbox', oldLayout]);
-    }
+  } else if (String(layout).toUpperCase() === 'VERTICAL') {
+    return me.callParent(['vbox', oldLayout]);
   }
   return me.callParent(arguments);
 }});
@@ -70719,7 +69785,7 @@ Ext.define('FormsRenderer.view.form.component.FieldSet', {extend:Ext.form.FieldS
   }
   const icon = config.formComponentConfig.icon;
   if (icon) {
-    config.label = `\x3ci class\x3d"${icon}"\x3e\x26nbsp${config.label}`;
+    config.label = `<i class="${icon}">&nbsp${config.label}`;
   }
   config.title = config.label;
   delete config.label;
@@ -70734,10 +69800,8 @@ Ext.define('FormsRenderer.view.form.component.FieldSet', {extend:Ext.form.FieldS
   const me = this;
   if (String(layout).toUpperCase() === 'HORIZONTAL') {
     return me.callParent(['hbox', oldLayout]);
-  } else {
-    if (String(layout).toUpperCase() === 'VERTICAL') {
-      return me.callParent(['vbox', oldLayout]);
-    }
+  } else if (String(layout).toUpperCase() === 'VERTICAL') {
+    return me.callParent(['vbox', oldLayout]);
   }
   return me.callParent(arguments);
 }});
@@ -70747,10 +69811,8 @@ Ext.define('FormsRenderer.view.form.component.Html', {extend:Ext.Component, alia
     const sanitizedHtml = DOMPurify.sanitize(config.bind.value);
     config.bind.html = sanitizedHtml;
     delete config.bind.value;
-  } else {
-    if (config.value) {
-      config.bind.html = config.value;
-    }
+  } else if (config.value) {
+    config.bind.html = config.value;
   }
   me.callParent([config]);
 }});
@@ -70779,20 +69841,18 @@ Ext.define('FormsRenderer.view.form.component.RadioGroup', {extend:Ext.field.Rad
     }
     if (empty && me.getRequired()) {
       errors.push(me.getRequiredMessage());
-    } else {
+    } else if (!errors.length) {
+      if (!empty) {
+        value = me.parseValue(value, errors);
+      }
       if (!errors.length) {
-        if (!empty) {
-          value = me.parseValue(value, errors);
+        field = me._validationField;
+        record = me._validationRecord;
+        if (field && record) {
+          field.validate(value, null, errors, record);
         }
-        if (!errors.length) {
-          field = me._validationField;
-          record = me._validationRecord;
-          if (field && record) {
-            field.validate(value, null, errors, record);
-          }
-          if (!empty) {
-            me.doValidate(value, errors, skipLazy);
-          }
+        if (!empty) {
+          me.doValidate(value, errors, skipLazy);
         }
       }
     }
@@ -70805,7 +69865,7 @@ Ext.define('FormsRenderer.view.form.component.RadioGroup', {extend:Ext.field.Rad
   return true;
 }, setDisabled:function(value) {
   this.callParent(arguments);
-  this.getGroupItems().forEach((innerItem) => {
+  this.getGroupItems().forEach(innerItem => {
     innerItem.setDisabled(value);
   });
 }, setError:function(value) {
@@ -70814,11 +69874,11 @@ Ext.define('FormsRenderer.view.form.component.RadioGroup', {extend:Ext.field.Rad
 }});
 Ext.define('FormsRenderer.view.form.component.CheckboxGroup', {extend:Ext.field.CheckboxGroup, alias:'widget.formsCheckboxGroup', mixins:[FormsRenderer.view.form.component.Mixin], setDisabled:function(value) {
   this.callParent(arguments);
-  this.getGroupItems().forEach((innerItem) => {
+  this.getGroupItems().forEach(innerItem => {
     innerItem.setDisabled(value);
   });
 }, setRequired:function(value) {
-  this.getGroupItems().forEach((innerItem) => {
+  this.getGroupItems().forEach(innerItem => {
     innerItem.setRequired(value);
   });
 }});
@@ -70830,22 +69890,20 @@ Ext.define('FormsRenderer.view.form.component.ComboBox', {extend:Ext.field.Combo
   if (!bind.options) {
     const constformConfig = config.formComponentConfig;
     me.setStoreData(constformConfig.options);
-  } else {
-    if (Ext.isString(bind.options)) {
-      const bindStringRegex = /^{data(\.[^/]+){1}}/g;
-      if (bindStringRegex.test(bind.options)) {
-        const bindString = bind.options;
-        const state = config.formConfig.state;
-        if (state) {
-          const jsonPoints = bindString.replace('{', '').replace('}', '').split('.');
-          let options = state;
-          Ext.each(jsonPoints, (point) => {
-            if (options) {
-              options = options[point];
-            }
-          });
-          me.setStoreData(options || []);
-        }
+  } else if (Ext.isString(bind.options)) {
+    const bindStringRegex = /^{data(\.[^/]+){1}}/g;
+    if (bindStringRegex.test(bind.options)) {
+      const bindString = bind.options;
+      const state = config.formConfig.state;
+      if (state) {
+        const jsonPoints = bindString.replace('{', '').replace('}', '').split('.');
+        let options = state;
+        Ext.each(jsonPoints, point => {
+          if (options) {
+            options = options[point];
+          }
+        });
+        me.setStoreData(options || []);
       }
     }
   }
@@ -70855,14 +69913,12 @@ Ext.define('FormsRenderer.view.form.component.ComboBox', {extend:Ext.field.Combo
   let storeData;
   if (options && Ext.isArray(options)) {
     storeData = options;
-  } else {
-    if (options && Ext.isString(options)) {
-      storeData = [];
-    }
+  } else if (options && Ext.isString(options)) {
+    storeData = [];
   }
   const formConfig = me.config.formConfig;
   if (Ext.isArray(storeData)) {
-    Ext.each(storeData, (item) => {
+    Ext.each(storeData, item => {
       if (Ext.isObject(item.label)) {
         const language = formConfig.state.language || 'de';
         item.label = item.label[language];
@@ -70881,12 +69937,10 @@ Ext.define('FormsRenderer.view.form.component.Image', {extend:Ext.Img, alias:'wi
     const srcConfig = formComponentConfig.src || undefined;
     if (srcConfig) {
       imgSrc = srcConfig;
-    } else {
-      if (formComponentConfig.encodedData && formComponentConfig.mimeType) {
-        const encodedData = formComponentConfig.encodedData;
-        const mimeType = formComponentConfig.mimeType;
-        imgSrc = `data:${mimeType};base64,${encodedData}`;
-      }
+    } else if (formComponentConfig.encodedData && formComponentConfig.mimeType) {
+      const encodedData = formComponentConfig.encodedData;
+      const mimeType = formComponentConfig.mimeType;
+      imgSrc = `data:${mimeType};base64,${encodedData}`;
     }
     if (imgSrc) {
       config.src = imgSrc;
@@ -70904,10 +69958,8 @@ Ext.define('FormsRenderer.view.form.table.Table', {extend:Ext.grid.Grid, alias:'
   if (formComponentConfig.data) {
     if (Ext.isString(formComponentConfig.data)) {
       config.store = me.getBindData(config.formConfig, formComponentConfig.data);
-    } else {
-      if (Ext.isArray(formComponentConfig.data)) {
-        config.store = me.getDataStore(formComponentConfig);
-      }
+    } else if (Ext.isArray(formComponentConfig.data)) {
+      config.store = me.getDataStore(formComponentConfig);
     }
   }
   if (formComponentConfig.cellEditing) {
@@ -70921,7 +69973,7 @@ Ext.define('FormsRenderer.view.form.table.Table', {extend:Ext.grid.Grid, alias:'
   const me = this;
   if (formComponentConfig.dataUrl) {
     let storeData = [];
-    Ext.Ajax.request({url:formComponentConfig.dataUrl, method:'GET', success:(response) => {
+    Ext.Ajax.request({url:formComponentConfig.dataUrl, method:'GET', success:response => {
       try {
         const responseJSON = JSON.parse(response.responseText);
         storeData = responseJSON.data.data;
@@ -70929,20 +69981,18 @@ Ext.define('FormsRenderer.view.form.table.Table', {extend:Ext.grid.Grid, alias:'
         Ext.log({level:'warn', msg:'Set store for table failed: data response may not be in well-formed JSON', dump:err});
       }
       me.setStore(storeData);
-    }, failure:(response) => {
+    }, failure:response => {
       Ext.Msg.alert('ERROR: Data load error', 'Data of the table could not be loaded.');
     }});
-  } else {
-    if (Ext.isArray(formComponentConfig.data)) {
-      return formComponentConfig.data;
-    }
+  } else if (Ext.isArray(formComponentConfig.data)) {
+    return formComponentConfig.data;
   }
 }, getBindData:function(formConfig, bindingString) {
   const formState = formConfig.state;
   let data = formState;
   const bindArray = bindingString.split('/');
   bindArray.splice(0, 1);
-  Ext.each(bindArray, (bindCmp) => {
+  Ext.each(bindArray, bindCmp => {
     data = data[bindCmp];
   });
   return data;
@@ -70951,23 +70001,22 @@ Ext.define('FormsRenderer.view.form.component.FileField', {extend:Ext.field.File
   const fileBtnEl = fileField.getFileButton().buttonElement;
   const file = fileBtnEl.dom.files[0];
   fileField.getBase64(file);
-}, focusleave:function(fileField) {
-  fileField.fireEvent('blur', fileField);
 }}, constructor:function(config) {
   const me = this;
   if (config.bind.value) {
     config.bind.fileContent = config.bind.value;
+    delete config.bind.value;
   }
   me.callParent([config]);
 }, getBase64:function(file) {
   if (file) {
     const me = this;
-    const reader = new FileReader;
+    const reader = new FileReader();
     reader.readAsDataURL(file);
     reader.onload = () => {
       me.setFileContent(reader.result);
     };
-    reader.onerror = (error) => {
+    reader.onerror = error => {
       Ext.Msg.alert('ERROR: error while uploading file', 'Some error occurs, the selected file can not be uploaded!');
     };
   }
@@ -70975,7 +70024,7 @@ Ext.define('FormsRenderer.view.form.component.FileField', {extend:Ext.field.File
 Ext.define('FormsRenderer.ConfigParser', {singleton:true, componentTypeMap:{TEXTFIELD:{xtype:'formsTextField', bind:['value', 'hidden', 'required', 'disabled', 'readOnly']}, CHECKBOX:{xtype:'formsCheckbox', bind:['value', 'hidden', 'required', 'disabled']}, BUTTON:{xtype:'formsButton', bind:['hidden', 'disabled']}, CONTAINER:{xtype:'formsContainer', bind:['hidden', 'required', 'disabled', 'readOnly']}, FIELDSET:{xtype:'formsFieldSet', bind:['hidden', 'required', 'disabled', 'readOnly']}, HTML:{xtype:'formsHtml', 
 bind:['value', 'hidden']}, DATEFIELD:{xtype:'formsDateField', bind:['value', 'hidden', 'required', 'disabled', 'readOnly']}, NUMBERFIELD:{xtype:'formsNumberField', bind:['value', 'hidden', 'required', 'disabled', 'readOnly']}, TEXTAREA:{xtype:'formsTextArea', bind:['value', 'hidden', 'required', 'disabled', 'readOnly']}, RADIO:{xtype:'formsRadio', bind:['value', 'hidden', 'disabled']}, RADIOGROUP:{xtype:'formsRadioGroup', formComponentConfigDefaults:{type:'radio'}, bind:['vertical', 'value', 'hidden', 
 'required', 'disabled']}, CHECKBOXGROUP:{xtype:'formsCheckboxGroup', formComponentConfigDefaults:{type:'checkbox'}, bind:['value', 'hidden', 'required', 'disabled']}, COMBOBOX:{xtype:'formsComboBox', bind:['value', 'hidden', 'required', 'disabled', 'options', 'readOnly']}, IMAGE:{xtype:'formsImage', bind:['hidden']}, TABLE:{xtype:'formsTable', bind:['data', 'hidden']}, FILEFIELD:{xtype:'formsFileField', bind:['fileContent', 'hidden', 'required', 'disabled', 'value']}}, initAsync:function(formConfig) {
-  const deferred = new Ext.Deferred;
+  const deferred = new Ext.Deferred();
   const me = this;
   if (formConfig.metaData && formConfig.metaData.name) {
     document.title = formConfig.metaData.name;
@@ -70997,7 +70046,7 @@ bind:['value', 'hidden']}, DATEFIELD:{xtype:'formsDateField', bind:['value', 'hi
     if (!componentsArray) {
       componentsArray = formConfig.components;
     }
-    internalComponentsArray = componentsArray.map((componentConfig) => {
+    internalComponentsArray = componentsArray.map(componentConfig => {
       return me.getComponent(formConfig, componentConfig, formComponentConfigDefaults);
     });
   } catch (e) {
@@ -71034,7 +70083,7 @@ bind:['value', 'hidden']}, DATEFIELD:{xtype:'formsDateField', bind:['value', 'hi
     if (formComponentConfig.id) {
       targetComponent.itemId = formComponentConfig.id;
     }
-    ['action', 'minWidth', 'minHeight', 'width', 'height', 'maxWidth', 'maxHeight', 'errorTarget', 'boxLabel', 'flex', 'labelAlign', 'labelMinWidth', 'labelTextAlign', 'labelWidth', 'labelWrap', 'boxLabelAlign', {from:'responsiveConfiguration', to:'responsiveConfig'}].forEach((attribute) => {
+    ['action', 'minWidth', 'minHeight', 'width', 'height', 'maxWidth', 'maxHeight', 'errorTarget', 'boxLabel', 'flex', 'labelAlign', 'labelMinWidth', 'labelTextAlign', 'labelWidth', 'labelWrap', 'boxLabelAlign', {from:'responsiveConfiguration', to:'responsiveConfig'}].forEach(attribute => {
       let sourceAttribute = attribute, targetAttribute = attribute;
       if (Ext.isObject(attribute)) {
         sourceAttribute = attribute.from;
@@ -71049,7 +70098,7 @@ bind:['value', 'hidden']}, DATEFIELD:{xtype:'formsDateField', bind:['value', 'hi
     }
     componentTypeConfig.bind = componentTypeConfig.bind || [];
     targetComponent.bind = {};
-    componentTypeConfig.bind.forEach((bindAttribute) => {
+    componentTypeConfig.bind.forEach(bindAttribute => {
       const bindString = formComponentConfig[bindAttribute];
       if (bindString && !Ext.isArray(bindString)) {
         if (Ext.isString(bindString)) {
@@ -71078,17 +70127,16 @@ bind:['value', 'hidden']}, DATEFIELD:{xtype:'formsDateField', bind:['value', 'hi
     formConfig.state = formConfig.state || {};
     const language = this.getLocalization(formConfig);
     formConfig.state.language = language;
-    console.log('Value localized: ', value, value[language]);
     return value[language];
   } catch (e) {
     Ext.log({msg:`${this.self.getName()}: ERROR getLocalizedValue`, dump:e, stack:true, level:'error'});
     return null;
   }
-}, getBindString:(string) => {
+}, getBindString:string => {
   const inputString = String(string);
   const bindStringRegex = /(\/\w+)+/g;
   if (inputString.match(bindStringRegex)) {
-    let result = inputString.replaceAll(bindStringRegex, (bindPart) => {
+    let result = inputString.replaceAll(bindStringRegex, bindPart => {
       let replacedValue = `${bindPart.replace('/', '')}`;
       return replacedValue.replaceAll('/', '.');
     });
@@ -71097,7 +70145,6 @@ bind:['value', 'hidden']}, DATEFIELD:{xtype:'formsDateField', bind:['value', 'hi
   return inputString;
 }, getLocalization:function(formConfig) {
   const urlLanguageParam = Ext.Object.fromQueryString(window.location.search.substring(1)).language, stateLanguage = formConfig.state && formConfig.state.language ? formConfig.state.language : null, defaultLanguage = formConfig.configuration && formConfig.configuration.defaultLanguage ? formConfig.configuration.defaultLanguage : null;
-  console.log('ConfigParser, localization: ', urlLanguageParam, stateLanguage, defaultLanguage, 'de');
   return urlLanguageParam || stateLanguage || defaultLanguage || 'de';
 }});
 Ext.define('FormsRenderer.common.Util', {singleton:true, getIconWithExtPrefix:function(iconCls) {
@@ -71105,7 +70152,7 @@ Ext.define('FormsRenderer.common.Util', {singleton:true, getIconWithExtPrefix:fu
 }});
 Ext.define('FormsRenderer.view.CenterMessage', {extend:Ext.Container, alias:'widget.formsCenterMessage', layout:'center', iconCls:'fas fa-info-circle', iconSize:'fa-2x', iconColor:'black', message:'Lorem Ipsum', size:'large', additionalContent:[], initialize:function() {
   const me = this;
-  me.add({xtype:'container', layout:{type:'vbox', align:'center'}, items:[{margin:'0 0 20 0', html:`\x3ci class\x3d"${me.iconSize} ${me.iconCls}" style\x3d"color:${me.iconColor}"\x3e\x3c/i\x3e \x3cspan style\x3d"font-size:${me.size}"\x3e${me.message}\x3c/span\x3e`}].concat(me.additionalContent)});
+  me.add({xtype:'container', layout:{type:'vbox', align:'center'}, items:[{margin:'0 0 20 0', html:`<i class="${me.iconSize} ${me.iconCls}" style="color:${me.iconColor}"></i> <span style="font-size:${me.size}">${me.message}</span>`}].concat(me.additionalContent)});
   me.callParent();
 }});
 Ext.define('FormsRenderer.view.Error', {extend:FormsRenderer.view.CenterMessage, alias:'widget.formsError', iconCls:'fas fa-exclamation-triangle', iconColor:'#EE5252', config:{formResponse:undefined}, initialize:function() {
@@ -71141,7 +70188,7 @@ Ext.define('FormsRenderer.view.form.RendererController', {extend:Ext.app.ViewCon
       me.schemaValidator = ajv.compile(view.config.formConfig.dataSchema);
     } catch (e) {
       view.removeAll();
-      view.setItems({xtype:'formsError', message:`invalid dataSchema in forms config\x3cbr\x3e${e.message}`});
+      view.setItems({xtype:'formsError', message:`invalid dataSchema in forms config<br>${e.message}`});
     }
   }
 }, initViewModel:function(vm) {
@@ -71177,7 +70224,7 @@ Ext.define('FormsRenderer.view.form.RendererController', {extend:Ext.app.ViewCon
       Ext.util.CSS.createStyleSheet(styles.css);
     }
     if (styles.cssURL) {
-      const createCssLinkEl = (url) => {
+      const createCssLinkEl = url => {
         const linkEl = document.createElement('link');
         linkEl.setAttribute('rel', 'stylesheet');
         linkEl.setAttribute('type', 'text/css');
@@ -71188,18 +70235,16 @@ Ext.define('FormsRenderer.view.form.RendererController', {extend:Ext.app.ViewCon
       const cssURL = styles.cssURL;
       if (Ext.isString(cssURL)) {
         createCssLinkEl(cssURL);
-      } else {
-        if (Ext.isArray(cssURL)) {
-          Ext.each(cssURL, (url) => {
-            createCssLinkEl(url);
-          });
-        }
+      } else if (Ext.isArray(cssURL)) {
+        Ext.each(cssURL, url => {
+          createCssLinkEl(url);
+        });
       }
     }
   }
 }, validateData:function(source) {
-  const me = this, view = me.getView(), vm = me.getViewModel(), deferred = new Ext.Deferred;
-  view.query('[isFormsComponent]').forEach((component) => {
+  const me = this, view = me.getView(), vm = me.getViewModel(), deferred = new Ext.Deferred();
+  view.query('[isFormsComponent]').forEach(component => {
     if (component.setError) {
       component.setError(null);
     }
@@ -71218,7 +70263,7 @@ Ext.define('FormsRenderer.view.form.RendererController', {extend:Ext.app.ViewCon
 }, callClientValidation:function() {
   const me = this, view = me.getView(), vm = me.getViewModel();
   let allRequiredConstraintsFulfilled = true;
-  view.query('[isFormsComponent]').forEach((component) => {
+  view.query('[isFormsComponent]').forEach(component => {
     if (component.setError) {
       const requiredConstraintFulfilled = component.validate();
       allRequiredConstraintsFulfilled = allRequiredConstraintsFulfilled && requiredConstraintFulfilled;
@@ -71239,24 +70284,24 @@ Ext.define('FormsRenderer.view.form.RendererController', {extend:Ext.app.ViewCon
   vm.set('validationOk.client', valid);
   return valid;
 }, callServerValidation:function(source) {
-  const me = this, view = me.getView(), deferred = new Ext.Deferred;
+  const me = this, view = me.getView(), deferred = new Ext.Deferred();
   if (!view.config.formConfig.configuration.validationUrl) {
     deferred.reject('missing validationUrl');
     return deferred.promise;
   }
-  me.callBackend(view.config.formConfig.configuration.validationUrl, 'validate', source ? source.formComponentConfig : null).then((responseJson) => {
+  me.callBackend(view.config.formConfig.configuration.validationUrl, 'validate', source ? source.formComponentConfig : null).then(responseJson => {
     deferred.resolve(responseJson);
   }, deferred.reject);
   return deferred.promise;
 }, applyValidationErrors:function(errors) {
   const me = this, view = me.getView(), unreportedErrors = [];
-  errors.forEach((errorObj) => {
+  errors.forEach(errorObj => {
     if (errorObj.instancePath) {
-      const targetComponents = view.query('[isFormsComponent]').filter((component) => {
+      const targetComponents = view.query('[isFormsComponent]').filter(component => {
         return component.initialConfig.bind && component.initialConfig.bind.value === FormsRenderer.ConfigParser.getBindString(`/data${errorObj.instancePath}`);
       });
       if (targetComponents.length > 0) {
-        targetComponents.forEach((targetComponent) => {
+        targetComponents.forEach(targetComponent => {
           if (targetComponent.setError) {
             targetComponent.setError(FormsRenderer.ConfigParser.getLocalizedValue(view.config.formConfig, errorObj.message));
           }
@@ -71271,8 +70316,8 @@ Ext.define('FormsRenderer.view.form.RendererController', {extend:Ext.app.ViewCon
   let errorWindow = Ext.first('#errorWindow');
   if (unreportedErrors.length > 0) {
     console.warn(JSON.stringify(unreportedErrors, null, 3));
-    const unreportedErrorsCmps = unreportedErrors.map((item) => {
-      return {html:`\x3ci class\x3d"fa fa-exclamation-circle"\x3e\x3c/i\x3e ${item.message}`};
+    const unreportedErrorsCmps = unreportedErrors.map(item => {
+      return {html:`<i class="fa fa-exclamation-circle"></i> ${item.message}`};
     });
     if (errorWindow) {
       errorWindow.show();
@@ -71292,20 +70337,16 @@ Ext.define('FormsRenderer.view.form.RendererController', {extend:Ext.app.ViewCon
   let returnPromise;
   if (!view.config.formConfig.configuration.submitUrl) {
     returnPromise = Ext.Deferred.rejected('missing submitUrl');
+  } else if (!me.callClientValidation()) {
+    returnPromise = Ext.Deferred.rejected('Validation failed');
   } else {
-    if (!me.callClientValidation()) {
-      returnPromise = Ext.Deferred.rejected('Validation failed');
-    } else {
-      let sourceObj;
-      if (source && source.formComponentConfig) {
-        sourceObj = source.formComponentConfig;
-      } else {
-        if (source) {
-          sourceObj = source;
-        }
-      }
-      returnPromise = me.callBackend(view.config.formConfig.configuration.submitUrl, 'submit', sourceObj);
+    let sourceObj;
+    if (source && source.formComponentConfig) {
+      sourceObj = source.formComponentConfig;
+    } else if (source) {
+      sourceObj = source;
     }
+    returnPromise = me.callBackend(view.config.formConfig.configuration.submitUrl, 'submit', sourceObj);
   }
   returnPromise.then(Ext.toast.bind(Ext, 'Submit successful', 5000), Ext.toast.bind(Ext));
   return returnPromise;
@@ -71322,7 +70363,7 @@ Ext.define('FormsRenderer.view.form.RendererController', {extend:Ext.app.ViewCon
     me.callClientValidation();
   }
 }, callBackend:function(url, action, originator) {
-  const me = this, view = me.getView(), vm = me.getViewModel(), deferred = new Ext.Deferred;
+  const me = this, view = me.getView(), vm = me.getViewModel(), deferred = new Ext.Deferred();
   view.setMasked({xtype:'loadmask', message:'Lädt'});
   Ext.Ajax.request({url:url, jsonData:{action:action, originator:originator, form:view.config.formConfig}, success:function(response) {
     view.unmask();
@@ -71340,11 +70381,9 @@ Ext.define('FormsRenderer.view.form.RendererController', {extend:Ext.app.ViewCon
           view.removeAll();
           view.add({xtype:'formsSuccess', flex:1, formConfig:view.config.formConfig, formResponse:responseJson, additionalContent:[{xtype:'button', iconCls:'x-fas fa-undo', handler:'resetRenderer', text:FormsRenderer.ConfigParser.getLocalizedValue(me.formConfig, {de:'Zurück', en:'Back'})}]});
         }
-      } else {
-        if (responseJson.result === 'failure') {
-          view.removeAll();
-          view.add({xtype:'formsError', flex:1, formConfig:view.config.formConfig, formResponse:responseJson});
-        }
+      } else if (responseJson.result === 'failure') {
+        view.removeAll();
+        view.add({xtype:'formsError', flex:1, formConfig:view.config.formConfig, formResponse:responseJson});
       }
       deferred.resolve(responseJson);
     } else {
@@ -71359,27 +70398,19 @@ Ext.define('FormsRenderer.view.form.RendererController', {extend:Ext.app.ViewCon
   if (action === 'setFormConfig') {
     const formConfig = data.formConfig;
     this.setFormConfig(formConfig);
-  } else {
-    if (action === 'setFormState') {
-      const state = data.state || {};
-      this.setFormState(state);
-    } else {
-      if (action === 'downloadFile') {
-        const fileData = data || {};
-        this.downloadFile(fileData.data, fileData.fileName, fileData.mimeType, fileData.base64Encoded);
-      } else {
-        if (action === 'multiActions') {
-          const actions = data;
-          Ext.each(actions, (action) => {
-            this.handleAction(action.action, action.data);
-          });
-        } else {
-          if (action === 'print') {
-            this.printForm();
-          }
-        }
-      }
-    }
+  } else if (action === 'setFormState') {
+    const state = data.state || {};
+    this.setFormState(state);
+  } else if (action === 'downloadFile') {
+    const fileData = data || {};
+    this.downloadFile(fileData.data, fileData.fileName, fileData.mimeType, fileData.base64Encoded);
+  } else if (action === 'multiActions') {
+    const actions = data;
+    Ext.each(actions, action => {
+      this.handleAction(action.action, action.data);
+    });
+  } else if (action === 'print') {
+    this.printForm();
   }
 }, setFormState:function(state) {
   const vm = this.getViewModel();
@@ -71422,14 +70453,11 @@ Ext.define('FormsRenderer.view.form.RendererController', {extend:Ext.app.ViewCon
   let result = newValue;
   if (newValue === '++') {
     result = binding.getValue() + 1;
-  } else {
-    if (newValue === '--') {
-      result = binding.getValue() - 1;
-    }
+  } else if (newValue === '--') {
+    result = binding.getValue() - 1;
   }
   binding.setValue(result);
 }});
-Ext.define('FormsRenderer.view.form.component.TestIdMixin', {extend:Ext.Mixin});
 Ext.define('FormsRenderer.view.form.table.column.Text', {extend:Ext.grid.column.Text, alias:'widget.formsTextColumn', mixins:[FormsRenderer.view.form.component.Mixin], formConfig:undefined, formComponentConfig:undefined, constructor:function(config) {
   const me = this;
   me.callParent([config]);
@@ -71453,7 +70481,7 @@ Ext.define('FormsRenderer.view.form.table.ColumnConfigParser', {singleton:true, 
   const me = this;
   let internalColumnConfigs = [];
   if (Ext.isArray(columnConfigs)) {
-    internalColumnConfigs = columnConfigs.map((columnConfig) => {
+    internalColumnConfigs = columnConfigs.map(columnConfig => {
       const type = columnConfig.type ? columnConfig.type.toUpperCase() : 'TEXT';
       const baseConfig = me.componentTypeMap[type];
       const internalColumnConfig = Ext.apply(baseConfig, columnConfig);
@@ -71487,7 +70515,7 @@ Ext.define('FormsRenderer.view.main.MainController', {extend:Ext.app.ViewControl
     me.iframeMode = true;
     me.setContent({xtype:'formsCenterMessage', iconCls:'fas fa-spinner fa-5x fa-spin', size:'large', message:'No formUrl parameter found. Wait for formConfig injection.'});
   } else {
-    Ext.Ajax.request({url:formUrl, useDefaultXhrHeader:false, success:(response) => {
+    Ext.Ajax.request({url:formUrl, useDefaultXhrHeader:false, success:response => {
       const formConfig = JSON.parse(response.responseText);
       me.createForm(formConfig, urlParams);
     }, failure:() => {
@@ -71502,16 +70530,14 @@ Ext.define('FormsRenderer.view.main.MainController', {extend:Ext.app.ViewControl
   let dataUrl = undefined;
   if (urlParams && urlParams.dataUrl) {
     dataUrl = urlParams.dataUrl;
-  } else {
-    if (formConfig.configuration && formConfig.configuration.dataUrl) {
-      dataUrl = formConfig.configuration.dataUrl;
-    }
+  } else if (formConfig.configuration && formConfig.configuration.dataUrl) {
+    dataUrl = formConfig.configuration.dataUrl;
   }
   if (dataUrl) {
-    this.loadDataFromUrl(dataUrl).then((loadedData) => {
+    this.loadDataFromUrl(dataUrl).then(loadedData => {
       formConfig.state.data = Ext.apply({}, loadedData, formConfig.state.data);
       me.addFormRenderer(formConfig);
-    })['catch'](() => {
+    })["catch"](() => {
       me.addFormRenderer(formConfig);
       Ext.log({msg:`Error while getting data from URL: ${dataUrl}`, level:'warn'});
     });
@@ -71523,7 +70549,7 @@ Ext.define('FormsRenderer.view.main.MainController', {extend:Ext.app.ViewControl
   const valid = me.formConfigValidator(formConfig);
   me.formConfig = formConfig;
   if (!valid) {
-    me.setContent({xtype:'formsError', message:`Invalid forms file\x3cbr\x3e\x3cpre\x3e${JSON.stringify(me.formConfigValidator.errors, undefined, 3)}\x3c/pre\x3e`});
+    me.setContent({xtype:'formsError', message:`Invalid forms file<br><pre>${JSON.stringify(me.formConfigValidator.errors, undefined, 3)}</pre>`});
   } else {
     me.setContent({xtype:'formsRenderer', formConfig:formConfig});
   }
@@ -71536,33 +70562,21 @@ Ext.define('FormsRenderer.view.main.MainController', {extend:Ext.app.ViewControl
     const formConfig = dataJson.request;
     me.createForm(formConfig);
     me.sendMessageResponse(dataJson, event, {});
-  } else {
-    if (dataJson.requestName === 'getFormConfig' && renderer) {
-      me.sendMessageResponse(dataJson, event, renderer.getFormConfig());
-    } else {
-      if (dataJson.requestName === 'setData' && renderer) {
-        renderer.getViewModel().set('data', Ext.apply(renderer.getViewModel().get('data'), dataJson.request));
-        me.sendMessageResponse(dataJson, event, renderer.getViewModel().get('data'));
-      } else {
-        if (dataJson.requestName === 'validateData' && renderer) {
-          renderer.getController().validateData().then(me.sendMessageResponse.bind(me, dataJson, event), me.sendMessageResponse.bind(me, dataJson, event));
-        } else {
-          if (dataJson.requestName === 'submitData' && renderer) {
-            renderer.getController().submitData(dataJson.request).then(me.sendMessageResponse.bind(me, dataJson, event), me.sendMessageResponse.bind(me, dataJson, event));
-          } else {
-            if (dataJson.requestName === 'resetForm' && renderer) {
-              renderer.getController().resetForm();
-              me.sendMessageResponse(dataJson, event, {});
-            } else {
-              if (dataJson.requestName === 'printForm' && renderer) {
-                renderer.getController().printForm();
-                me.sendMessageResponse(dataJson, event, {});
-              }
-            }
-          }
-        }
-      }
-    }
+  } else if (dataJson.requestName === 'getFormConfig' && renderer) {
+    me.sendMessageResponse(dataJson, event, renderer.getFormConfig());
+  } else if (dataJson.requestName === 'setData' && renderer) {
+    renderer.getViewModel().set('data', Ext.apply(renderer.getViewModel().get('data'), dataJson.request));
+    me.sendMessageResponse(dataJson, event, renderer.getViewModel().get('data'));
+  } else if (dataJson.requestName === 'validateData' && renderer) {
+    renderer.getController().validateData().then(me.sendMessageResponse.bind(me, dataJson, event), me.sendMessageResponse.bind(me, dataJson, event));
+  } else if (dataJson.requestName === 'submitData' && renderer) {
+    renderer.getController().submitData(dataJson.request).then(me.sendMessageResponse.bind(me, dataJson, event), me.sendMessageResponse.bind(me, dataJson, event));
+  } else if (dataJson.requestName === 'resetForm' && renderer) {
+    renderer.getController().resetForm();
+    me.sendMessageResponse(dataJson, event, {});
+  } else if (dataJson.requestName === 'printForm' && renderer) {
+    renderer.getController().printForm();
+    me.sendMessageResponse(dataJson, event, {});
   }
 }, sendMessageResponse:function(sourceEventData, sourceEvent, response) {
   const me = this;
@@ -71596,8 +70610,8 @@ Ext.define('FormsRenderer.view.main.MainController', {extend:Ext.app.ViewControl
     window.parent.postMessage(JSON.stringify(responseObj), '*');
   }
 }, loadDataFromUrl:function(url) {
-  const deferred = new Ext.Deferred;
-  Ext.Ajax.request({url:url, method:'GET', useDefaultXhrHeader:false, success:(response) => {
+  const deferred = new Ext.Deferred();
+  Ext.Ajax.request({url:url, method:'GET', useDefaultXhrHeader:false, success:response => {
     const data = Ext.decode(response.responseText);
     deferred.resolve(data);
   }, failure:() => {

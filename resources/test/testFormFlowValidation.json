@@ -32,47 +32,52 @@
               "components": [
                 {
                   "type": "textfield",
-                  "value": "${/data/textfield}",
+                  "value": "/data/textfield",
                   "label": {
                     "de": "Text",
                     "en": "Text"
                   }
                 },
+
                 {
                   "type": "datefield",
-                  "value": "${/data/datefield}",
+                  "value": "/data/datefield",
                   "label": {
                     "de": "Datum",
                     "en": "Date"
                   }
                 },
+
                 {
                   "type": "numberfield",
-                  "value": "${/data/numberfield}",
+                  "value": "/data/numberfield",
                   "label": {
                     "de": "Zahl",
                     "en": "Number"
                   }
                 },
+
                 {
                   "type": "textarea",
-                  "value": "${/data/textarea}",
+                  "value": "/data/textarea",
                   "label": {
                     "de": "Mehrzeilig",
                     "en": "Multiline"
                   }
                 },
+
                 {
                   "type": "checkbox",
-                  "value": "${/data/checkbox}",
+                  "value": "/data/checkbox",
                   "label": {
                     "de": "Checkbox",
                     "en": "Checkbox"
                   }
                 },
+
                 {
                   "type": "radiogroup",
-                  "value": "${/data/radioGroup}",
+                  "value": "/data/radioGroup",
                   "label": {
                     "de": "Radio Gruppe",
                     "en": "Radio group"
@@ -85,6 +90,7 @@
                         "en": "one"
                       }
                     },
+
                     {
                       "value": 2,
                       "label": {
@@ -92,6 +98,7 @@
                         "en": "two"
                       }
                     },
+
                     {
                       "value": 3,
                       "label": {
@@ -101,6 +108,7 @@
                     }
                   ]
                 },
+
                 {
                   "type": "checkboxgroup",
                   "label": {
@@ -110,23 +118,25 @@
                   "components": [
                     {
                       "type": "checkbox",
-                      "value": "${/data/checkboxGroup/one}",
+                      "value": "/data/checkboxGroup/one",
                       "label": {
                         "de": "Eins",
                         "en": "one"
                       }
                     },
+
                     {
                       "type": "checkbox",
-                      "value": "${/data/checkboxGroup/two}",
+                      "value": "/data/checkboxGroup/two",
                       "label": {
                         "de": "Zwei",
                         "en": "two"
                       }
                     },
+
                     {
                       "type": "checkbox",
-                      "value": "${/data/checkboxGroup/three}",
+                      "value": "/data/checkboxGroup/three",
                       "label": {
                         "de": "Drei",
                         "en": "three"
@@ -137,133 +147,131 @@
                 {
                   "type": "thisTypeDoesn'tExist"
                 }
+
               ]
             }
-          ]
-        },
+          ]},
         {
-          "type": "container",
-          "layout": "vertical",
-          "components": [
-            {
-              "type": "html",
-              "value": "<b>Test Form - {language}</b><br>Dies ist das erste Testformular."
-            },
-            {
-              "id": "lastName",
-              "type": "textfield",
-              "value": "${/data/lastName}",
-              "label": {
-                "de": "Nachname",
-                "en": "Lastname"
-              }
-            },
-            {
-              "id": "firstName",
-              "type": "textfield",
-              "value": "${/data/firstName}",
-              "label": {
-                "de": "Vorname",
-                "en": "Firstname"
-              }
-            },
-            {
-              "type": "fieldset",
-              "label": {
-                "de": "Adresse",
-                "en": "Address"
-              },
-              "layout": "vertical",
-              "components": [
-                {
-                  "type": "container",
-                  "layout": "horizontal",
-                  "components": [
-                    {
-                      "id": "street",
-                      "type": "textfield",
-                      "value": "${/data/address/street}",
-                      "label": {
-                        "de": "Straße",
-                        "en": "Street"
-                      }
-                    },
-                    {
-                      "id": "streetNumber",
-                      "type": "textfield",
-                      "label": {
-                        "de": "Hausnummer",
-                        "en": "Number"
-                      }
-                    }
-                  ]
-                },
-                {
-                  "type": "container",
-                  "layout": "horizontal",
-                  "components": [
-                    {
-                      "id": "city",
-                      "type": "textfield",
-                      "label": {
-                        "de": "Stadt",
-                        "en": "City"
-                      }
-                    },
-                    {
-                      "id": "country",
-                      "type": "textfield",
-                      "label": {
-                        "de": "Land",
-                        "en": "Country"
-                      }
-                    }
-                  ]
-                }
-              ]
-            },
-            {
-              "id": "consent",
-              "type": "checkbox",
-              "label": {
-                "de": "OK?",
-                "en": "O.K.?"
-              }
-            },
-            {
-              "type": "container",
-              "layout": "horizontal",
-              "components": [
-                {
-                  "type": "button",
-                  "action": "reset",
-                  "label": {
-                    "de": "Zurücksetzen",
-                    "en": "reset"
-                  }
-                },
-                {
-                  "type": "button",
-                  "action": "validate",
-                  "label": {
-                    "de": "Formular validieren",
-                    "en": "validate form"
-                  }
-                },
-                {
-                  "type": "button",
-                  "action": "submit",
-                  "label": {
-                    "de": "Formular abschicken",
-                    "en": "submit form"
-                  }
-                }
-              ]
+        "type": "container",
+        "layout": "vertical",
+        "components": [
+          {
+            "type": "html",
+            "value": "<b>Test Form - {language}</b><br>Dies ist das erste Testformular."
+          },
+          {
+            "id": "lastName",
+            "type": "textfield",
+            "value": "/data/lastName",
+            "label": {
+              "de": "Nachname",
+              "en": "Lastname"
             }
-          ]
-        }
-      ]
-    }
+          },
+          {
+            "id": "firstName",
+            "type": "textfield",
+            "value": "/data/firstName",
+            "label": {
+              "de": "Vorname",
+              "en": "Firstname"
+            }
+          },
+          {
+            "type": "fieldset",
+            "label": {
+              "de": "Adresse",
+              "en": "Address"
+            },
+            "layout": "vertical",
+            "components": [
+              {
+                "type": "container",
+                "layout": "horizontal",
+                "components": [
+                  {
+                    "id": "street",
+                    "type": "textfield",
+                    "value": "/data/address/street",
+                    "label": {
+                      "de": "Straße",
+                      "en": "Street"
+                    }
+                  },
+                  {
+                    "id": "streetNumber",
+                    "type": "textfield",
+                    "label": {
+                      "de": "Hausnummer",
+                      "en": "Number"
+                    }
+                  }
+                ]
+              },
+              {
+                "type": "container",
+                "layout": "horizontal",
+                "components": [
+                  {
+                    "id": "city",
+                    "type": "textfield",
+                    "label": {
+                      "de": "Stadt",
+                      "en": "City"
+                    }
+                  },
+                  {
+                    "id": "country",
+                    "type": "textfield",
+                    "label": {
+                      "de": "Land",
+                      "en": "Country"
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "consent",
+            "type": "checkbox",
+            "label": {
+              "de": "OK?",
+              "en": "O.K.?"
+            }
+          },
+          {
+            "type": "container",
+            "layout": "horizontal",
+            "components": [
+              {
+                "type": "button",
+                "action": "reset",
+                "label": {
+                  "de": "Zurücksetzen",
+                  "en": "reset"
+                }
+              },
+              {
+                "type": "button",
+                "action": "validate",
+                "label": {
+                  "de": "Formular validieren",
+                  "en": "validate form"
+                }
+              },
+              {
+                "type": "button",
+                "action": "submit",
+                "label": {
+                  "de": "Formular abschicken",
+                  "en": "submit form"
+                }
+              }
+            ]
+          }
+        ]
+      }]}
   ],
   "dataSchema": {
     "$schema": "https://json-schema.org/draft/2019-09/schema",
@@ -295,8 +303,7 @@
       }
     },
     "required": [
-      "lastName",
-      "address"
+      "lastName","address"
     ]
   },
   "state": {
