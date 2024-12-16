@@ -69616,6 +69616,25 @@ Ext.define(null, {override:'Ext.Component', initialize:function() {
   });
   me.callParent(arguments);
 }});
+Ext.define(null, {override:'Ext.Container', setReadOnly:function(value) {
+  this.getInnerItems().forEach(innerItem => {
+    if (innerItem.setReadOnly) {
+      innerItem.setReadOnly(value);
+    }
+  });
+}, setDisabled:function(value) {
+  this.getInnerItems().forEach(innerItem => {
+    if (innerItem.setDisabled) {
+      innerItem.setDisabled(value);
+    }
+  });
+}, setRequired:function(value) {
+  this.getInnerItems().forEach(innerItem => {
+    if (innerItem.setRequired) {
+      innerItem.setRequired(value);
+    }
+  });
+}});
 Ext.define(null, {override:'Ext.field.Field', config:{errorTarget:'under', labelWidth:'auto'}, constructor:function(config) {
   const me = this;
   const formComponentConfig = config.formComponentConfig;
@@ -69665,23 +69684,21 @@ Ext.define(null, {override:'Ext.field.Field', config:{errorTarget:'under', label
     }
   }
   me.callParent([config]);
-}});
-Ext.define(null, {override:'Ext.field.FieldGroupContainer', onGroupChange:function() {
+  let errorMessage = me.getErrorMessage();
+  if (Array.isArray(errorMessage) && errorMessage.length > 0) {
+    errorMessage = errorMessage[0];
+  }
+  if (errorMessage === me.getRequiredMessage()) {
+    me.setError(null);
+  }
+}, setRequired:function(required) {
   const me = this;
-  let isValid;
-  if (me.isConfiguring || me.isDestructing() || me.suspendCheckChange) {
-    return;
-  }
-  const newVal = me.getValue();
-  const oldVal = me.lastValue || me.originalValue;
-  if (!me.isEqual(newVal, oldVal)) {
-    me.lastValue = newVal;
-    me.fireEvent('change', me, newVal, oldVal);
-    isValid = me.validate();
-    if (isValid) {
-      me.publishState('value', newVal);
-    }
-  }
+  me.callParent(arguments);
+  me.setError(null);
+}, setDisabled:function(disabled) {
+  const me = this;
+  me.callParent(arguments);
+  me.setError(null);
 }});
 Ext.define('FormsRenderer.Application', {extend:Ext.app.Application, name:'FormsRenderer', quickTips:false, platformConfig:{desktop:{quickTips:true}}, onAppUpdate:function() {
   Ext.Msg.confirm('Application Update', 'This application has an update, reload?', function(choice) {
@@ -69720,7 +69737,7 @@ Ext.define('FormsRenderer.view.form.component.Checkbox', {extend:Ext.field.Check
   me.callParent(arguments);
   me.setValue(checked);
 }});
-Ext.define('FormsRenderer.view.form.component.Button', {extend:Ext.Button, alias:'widget.formsButton', mixins:[FormsRenderer.view.form.component.Mixin], formConfig:undefined, formComponentConfig:undefined, constructor:function(config) {
+Ext.define('FormsRenderer.view.form.component.Button', {extend:Ext.Button, alias:'widget.formsButton', config:{target:null, value:null}, mixins:[FormsRenderer.view.form.component.Mixin], formConfig:undefined, formComponentConfig:undefined, constructor:function(config) {
   const me = this;
   const icon = config.formComponentConfig ? config.formComponentConfig.icon : undefined;
   if (icon) {
@@ -69746,6 +69763,12 @@ Ext.define('FormsRenderer.view.form.component.Container', {extend:Ext.field.Pane
     config.layout = config.formComponentConfig.layout;
   }
   me.callParent([config]);
+  if (config['required'] === true) {
+    me.setRequired(config['required']);
+  }
+  if (config['readOnly'] === true) {
+    me.setReadOnly(config['readOnly']);
+  }
 }, applyLayout:function(layout, oldLayout) {
   const me = this;
   if (String(layout).toUpperCase() === 'HORIZONTAL') {
@@ -69754,14 +69777,6 @@ Ext.define('FormsRenderer.view.form.component.Container', {extend:Ext.field.Pane
     return me.callParent(['vbox', oldLayout]);
   }
   return me.callParent(arguments);
-}, setReadOnly:function(value) {
-  this.getInnerItems().forEach(innerItem => {
-    innerItem.setReadOnly(value);
-  });
-}, setRequired:function(value) {
-  this.getInnerItems().forEach(innerItem => {
-    innerItem.setRequired(value);
-  });
 }});
 Ext.define('FormsRenderer.view.form.component.FieldSet', {extend:Ext.form.FieldSet, alias:'widget.formsFieldSet', mixins:[FormsRenderer.view.form.component.Mixin], formConfig:undefined, formComponentConfig:undefined, padding:10, constructor:function(config) {
   const me = this;
@@ -69775,6 +69790,12 @@ Ext.define('FormsRenderer.view.form.component.FieldSet', {extend:Ext.form.FieldS
   config.title = config.label;
   delete config.label;
   me.callParent([config]);
+  if (config['required'] === true) {
+    me.setRequired(config['required']);
+  }
+  if (config['readOnly'] === true) {
+    me.setReadOnly(config['readOnly']);
+  }
 }, applyLayout:function(layout, oldLayout) {
   const me = this;
   if (String(layout).toUpperCase() === 'HORIZONTAL') {
@@ -69783,14 +69804,6 @@ Ext.define('FormsRenderer.view.form.component.FieldSet', {extend:Ext.form.FieldS
     return me.callParent(['vbox', oldLayout]);
   }
   return me.callParent(arguments);
-}, setReadOnly:function(value) {
-  this.getInnerItems().forEach(innerItem => {
-    innerItem.setReadOnly(value);
-  });
-}, setRequired:function(value) {
-  this.getInnerItems().forEach(innerItem => {
-    innerItem.setRequired(value);
-  });
 }});
 Ext.define('FormsRenderer.view.form.component.Html', {extend:Ext.Component, alias:'widget.formsHtml', mixins:[FormsRenderer.view.form.component.Mixin], formConfig:undefined, formComponentConfig:undefined, padding:10, constructor:function(config) {
   const me = this;
@@ -69798,22 +69811,101 @@ Ext.define('FormsRenderer.view.form.component.Html', {extend:Ext.Component, alia
     const sanitizedHtml = DOMPurify.sanitize(config.bind.value);
     config.bind.html = sanitizedHtml;
     delete config.bind.value;
+  } else if (config.value) {
+    config.bind.html = config.value;
   }
   me.callParent([config]);
 }});
 Ext.define('FormsRenderer.view.form.component.DateField', {extend:Ext.field.Date, alias:'widget.formsDateField', mixins:[FormsRenderer.view.form.component.Mixin]});
 Ext.define('FormsRenderer.view.form.component.NumberField', {extend:Ext.field.Number, alias:'widget.formsNumberField', mixins:[FormsRenderer.view.form.component.Mixin]});
 Ext.define('FormsRenderer.view.form.component.TextArea', {extend:Ext.field.TextArea, alias:'widget.formsTextArea', mixins:[FormsRenderer.view.form.component.Mixin]});
-Ext.define('FormsRenderer.view.form.component.RadioGroup', {extend:Ext.field.RadioGroup, alias:'widget.formsRadioGroup', mixins:[FormsRenderer.view.form.component.Mixin], formConfig:undefined, formComponentConfig:undefined, constructor:function(config) {
-  const me = this;
-  if (config.formComponentConfig.options) {
-    config.items = config.formComponentConfig.options.map(option => {
-      return {label:FormsRenderer.ConfigParser.getLocalizedValue(config.formConfig, option.label), value:option.value};
-    });
-  }
-  me.callParent([config]);
+Ext.define('FormsRenderer.view.form.component.Radio', {extend:Ext.field.Radio, alias:'widget.formsRadio', mixins:[FormsRenderer.view.form.component.Mixin], onBlur:function() {
+  this.parentRadioGroup.fireEvent('blur', this.parentRadioGroup);
+}, onFocus:function() {
+  this.parentRadioGroup.fireEvent('focus', this.parentRadioGroup);
 }});
-Ext.define('FormsRenderer.view.form.component.CheckboxGroup', {extend:Ext.field.CheckboxGroup, alias:'widget.formsCheckboxGroup', mixins:[FormsRenderer.view.form.component.Mixin], formConfig:undefined, formComponentConfig:undefined});
+Ext.define('FormsRenderer.view.form.component.RadioGroup', {extend:Ext.field.RadioGroup, alias:'widget.formsRadioGroup', mixins:[FormsRenderer.view.form.component.Mixin], constructor:function(config) {
+  const me = this;
+  me.callParent([config]);
+  this.getGroupItems().forEach(innerItem => {
+    innerItem.parentRadioGroup = me;
+  });
+}, validate:function(skipLazy) {
+  let me = this, empty, errors, field, record, validity, value;
+  if (me.isConfiguring && me.validateOnInit === 'none') {
+    return true;
+  }
+  if (!me.getDisabled() || me.getValidateDisabled()) {
+    errors = [];
+    if (me.isInputField && !me.isSelectField) {
+      value = me.getInputValue();
+      empty = !value;
+      validity = empty && me.inputElement.dom.validity;
+      if (validity && validity.badInput) {
+        errors.push(me.badFormatMessage);
+        empty = false;
+      }
+    } else {
+      value = me.getValue();
+      empty = value === '' || value == null;
+    }
+    if (empty && me.getRequired()) {
+      errors.push(me.getRequiredMessage());
+    } else if (!errors.length) {
+      if (!empty) {
+        value = me.parseValue(value, errors);
+      }
+      if (!errors.length) {
+        field = me._validationField;
+        record = me._validationRecord;
+        if (field && record) {
+          field.validate(value, null, errors, record);
+        }
+        if (!empty) {
+          me.doValidate(value, errors, skipLazy);
+        }
+      }
+    }
+    if (errors.length) {
+      me.setError(errors);
+      return false;
+    }
+  }
+  me.setError(null);
+  return true;
+}, setDisabled:function(value) {
+  this.callParent(arguments);
+  this.getGroupItems().forEach(innerItem => {
+    innerItem.setDisabled(value);
+  });
+}, setError:function(value) {
+  const me = this;
+  me.setErrorMessage(value);
+}});
+Ext.define('FormsRenderer.view.form.component.CheckboxGroup', {extend:Ext.field.CheckboxGroup, alias:'widget.formsCheckboxGroup', mixins:[FormsRenderer.view.form.component.Mixin], constructor:function(config) {
+  this.callParent([config]);
+  const groupItems = this.getGroupItems();
+  for (let i = 0; i < groupItems.length; i++) {
+    const innerItem = groupItems[i];
+    let name = `${i}`;
+    if (innerItem.getLabel()) {
+      name += `-${innerItem.getLabel()}`;
+    }
+    if (innerItem.getId()) {
+      name += `-${innerItem.getId()}`;
+    }
+    innerItem.setName(name);
+  }
+}, setDisabled:function(value) {
+  this.callParent(arguments);
+  this.getGroupItems().forEach(innerItem => {
+    innerItem.setDisabled(value);
+  });
+}, setRequired:function(value) {
+  this.getGroupItems().forEach(innerItem => {
+    innerItem.setRequired(value);
+  });
+}});
 Ext.define('FormsRenderer.view.form.component.ComboBox', {extend:Ext.field.ComboBox, alias:'widget.formsComboBox', mixins:[FormsRenderer.view.form.component.Mixin], formConfig:undefined, formComponentConfig:undefined, publishes:{value:true}, displayField:'label', valueField:'value', queryMode:'local', forceSelection:true, constructor:function(config) {
   const me = this;
   config.store = {data:[]};
@@ -69933,11 +70025,12 @@ Ext.define('FormsRenderer.view.form.component.FileField', {extend:Ext.field.File
   const fileBtnEl = fileField.getFileButton().buttonElement;
   const file = fileBtnEl.dom.files[0];
   fileField.getBase64(file);
+}, focusleave:function(fileField) {
+  fileField.fireEvent('blur', fileField);
 }}, constructor:function(config) {
   const me = this;
   if (config.bind.value) {
     config.bind.fileContent = config.bind.value;
-    delete config.bind.value;
   }
   me.callParent([config]);
 }, getBase64:function(file) {
@@ -69953,9 +70046,9 @@ Ext.define('FormsRenderer.view.form.component.FileField', {extend:Ext.field.File
     };
   }
 }});
-Ext.define('FormsRenderer.ConfigParser', {singleton:true, componentTypeMap:{TEXTFIELD:{xtype:'formsTextField', bind:['value', 'hidden', 'required', 'disabled', 'readOnly']}, CHECKBOX:{xtype:'formsCheckbox', bind:['value', 'hidden', 'required', 'disabled', 'readOnly']}, BUTTON:{xtype:'formsButton', bind:['hidden', 'disabled']}, CONTAINER:{xtype:'formsContainer', bind:['hidden', 'required', 'disabled', 'readOnly']}, FIELDSET:{xtype:'formsFieldSet', bind:['hidden', 'required', 'disabled', 'readOnly']}, 
-HTML:{xtype:'formsHtml', bind:['value', 'hidden', 'disabled', 'readOnly']}, DATEFIELD:{xtype:'formsDateField', bind:['value', 'hidden', 'required', 'disabled', 'readOnly']}, NUMBERFIELD:{xtype:'formsNumberField', bind:['value', 'hidden', 'required', 'disabled', 'readOnly']}, TEXTAREA:{xtype:'formsTextArea', bind:['value', 'hidden', 'required', 'disabled', 'readOnly']}, RADIOGROUP:{xtype:'formsRadioGroup', bind:['value', 'hidden', 'required', 'disabled', 'readOnly']}, CHECKBOXGROUP:{xtype:'formsCheckboxGroup', 
-formComponentConfigDefaults:{type:'checkbox'}, bind:['value', 'hidden', 'required', 'disabled', 'readOnly']}, COMBOBOX:{xtype:'formsComboBox', bind:['value', 'hidden', 'required', 'disabled', 'options', 'readOnly']}, IMAGE:{xtype:'formsImage'}, TABLE:{xtype:'formsTable', bind:['data']}, FILEFIELD:{xtype:'formsFileField', bind:['fileContent', 'hidden', 'required', 'disabled', 'readOnly', 'value']}}, initAsync:function(formConfig) {
+Ext.define('FormsRenderer.ConfigParser', {singleton:true, componentTypeMap:{TEXTFIELD:{xtype:'formsTextField', bind:['value', 'hidden', 'required', 'disabled', 'readOnly']}, CHECKBOX:{xtype:'formsCheckbox', bind:['value', 'hidden', 'required', 'disabled']}, BUTTON:{xtype:'formsButton', bind:['hidden', 'disabled', 'target', 'value']}, CONTAINER:{xtype:'formsContainer', bind:['hidden', 'required', 'disabled', 'readOnly']}, FIELDSET:{xtype:'formsFieldSet', bind:['hidden', 'required', 'disabled', 'readOnly']}, 
+HTML:{xtype:'formsHtml', bind:['value', 'hidden']}, DATEFIELD:{xtype:'formsDateField', bind:['value', 'hidden', 'required', 'disabled', 'readOnly']}, NUMBERFIELD:{xtype:'formsNumberField', bind:['value', 'hidden', 'required', 'disabled', 'readOnly']}, TEXTAREA:{xtype:'formsTextArea', bind:['value', 'hidden', 'required', 'disabled', 'readOnly']}, RADIO:{xtype:'formsRadio', bind:['value', 'hidden', 'disabled']}, RADIOGROUP:{xtype:'formsRadioGroup', formComponentConfigDefaults:{type:'radio'}, bind:['vertical', 
+'value', 'hidden', 'required', 'disabled']}, CHECKBOXGROUP:{xtype:'formsCheckboxGroup', formComponentConfigDefaults:{type:'checkbox'}, bind:['value', 'hidden', 'required', 'disabled']}, COMBOBOX:{xtype:'formsComboBox', bind:['value', 'hidden', 'required', 'disabled', 'options', 'readOnly']}, IMAGE:{xtype:'formsImage', bind:['hidden']}, TABLE:{xtype:'formsTable', bind:['data', 'hidden']}, FILEFIELD:{xtype:'formsFileField', bind:['fileContent', 'hidden', 'required', 'disabled', 'value']}}, initAsync:function(formConfig) {
   const deferred = new Ext.Deferred();
   const me = this;
   if (formConfig.metaData && formConfig.metaData.name) {
@@ -69997,6 +70090,9 @@ formComponentConfigDefaults:{type:'checkbox'}, bind:['value', 'hidden', 'require
     if (Ext.isArray(mergedFormComponentConfig.components)) {
       internalComponentConfig.items = me.getComponents(formConfig, mergedFormComponentConfig.components, componentTypeConfig.formComponentConfigDefaults);
     }
+    if (Ext.isArray(mergedFormComponentConfig.options) && componentTypeConfig.formComponentConfigDefaults) {
+      internalComponentConfig.items = me.getComponents(formConfig, mergedFormComponentConfig.options, componentTypeConfig.formComponentConfigDefaults);
+    }
     me.applyCommonConfiguration(formConfig, formComponentConfig, internalComponentConfig);
     return internalComponentConfig;
   } catch (e) {
@@ -70012,7 +70108,7 @@ formComponentConfigDefaults:{type:'checkbox'}, bind:['value', 'hidden', 'require
     if (formComponentConfig.id) {
       targetComponent.itemId = formComponentConfig.id;
     }
-    ['action', 'readOnly', 'minWidth', 'minHeight', 'width', 'height', 'maxWidth', 'maxHeight', 'errorTarget', 'boxLabel', 'flex', 'disabled', 'required', 'labelAlign', 'labelMinWidth', 'labelTextAlign', 'labelWidth', 'labelWrap', 'boxLabelAlign', {from:'responsiveConfiguration', to:'responsiveConfig'}].forEach(attribute => {
+    ['action', 'minWidth', 'minHeight', 'width', 'height', 'maxWidth', 'maxHeight', 'errorTarget', 'boxLabel', 'flex', 'labelAlign', 'labelMinWidth', 'labelTextAlign', 'labelWidth', 'labelWrap', 'boxLabelAlign', {from:'responsiveConfiguration', to:'responsiveConfig'}].forEach(attribute => {
       let sourceAttribute = attribute, targetAttribute = attribute;
       if (Ext.isObject(attribute)) {
         sourceAttribute = attribute.from;
@@ -70029,8 +70125,12 @@ formComponentConfigDefaults:{type:'checkbox'}, bind:['value', 'hidden', 'require
     targetComponent.bind = {};
     componentTypeConfig.bind.forEach(bindAttribute => {
       const bindString = formComponentConfig[bindAttribute];
-      if (bindString && Ext.isString(bindString)) {
-        targetComponent.bind[bindAttribute] = me.getBindString(bindString);
+      if (bindString && !Ext.isArray(bindString)) {
+        if (Ext.isString(bindString)) {
+          targetComponent.bind[bindAttribute] = me.getBindString(bindString);
+        } else {
+          targetComponent[bindAttribute] = bindString;
+        }
       }
     });
   } catch (e) {
@@ -70105,7 +70205,7 @@ Ext.define('FormsRenderer.view.form.Renderer', {extend:Ext.Panel, alias:'widget.
 }}}, listeners:{painted:function() {
   window.formsRendererReady = true;
 }}});
-Ext.define('FormsRenderer.view.form.RendererController', {extend:Ext.app.ViewController, alias:'controller.formsRendererController', schemaValidator:undefined, initialState:undefined, control:{'field':{change:'onDataChange', blur:'onBlur'}, '[action\x3dreset]':{tap:'resetForm'}, '[action\x3dvalidate]':{tap:'validateData'}, '[action\x3dsubmit]':{tap:'submitData'}, '[action\x3dprint]':{tap:'printForm'}, '[action\x3dsetData]':{tap:'setDataFunction'}}, init:function(view) {
+Ext.define('FormsRenderer.view.form.RendererController', {extend:Ext.app.ViewController, alias:'controller.formsRendererController', schemaValidator:undefined, initialState:undefined, control:{'field':{change:'onDataChange', blur:'onBlur'}, '[action\x3dreset]':{tap:'resetForm'}, '[action\x3dvalidate]':{tap:'validateData'}, '[action\x3dsubmit]':{tap:'submitData'}, '[action\x3dprint]':{tap:'printForm'}, '[action\x3dsetProperty]':{tap:'setTargetPropertyToValue'}}, init:function(view) {
   const me = this;
   me.initComponents();
   if (view.config.formConfig.dataSchema) {
@@ -70167,17 +70267,24 @@ Ext.define('FormsRenderer.view.form.RendererController', {extend:Ext.app.ViewCon
       }
     }
   }
-}, validateData:function(source) {
+}, validateData:function(source, onlyValidateSource) {
   const me = this, view = me.getView(), vm = me.getViewModel(), deferred = new Ext.Deferred();
-  view.query('[isFormsComponent]').forEach(component => {
+  if (onlyValidateSource !== true) {
+    onlyValidateSource = false;
+  }
+  let componentsToBeValidated = [source];
+  if (!source || !onlyValidateSource) {
+    componentsToBeValidated = view.query('[isFormsComponent]');
+  }
+  componentsToBeValidated.forEach(component => {
     if (component.setError) {
       component.setError(null);
     }
   });
   vm.set('validationErrors', {server:[], client:[]});
-  me.callClientValidation();
+  me.callClientValidation(componentsToBeValidated);
   if (view.config.formConfig.configuration.validationUrl) {
-    me.callServerValidation(source).then(deferred.resolve.bind(deferred, vm.get('validationErrors')), deferred.reject.bind(deferred, vm.get('validationErrors')));
+    me.callServerValidation(source, componentsToBeValidated).then(deferred.resolve.bind(deferred, vm.get('validationErrors')), deferred.reject.bind(deferred, vm.get('validationErrors')));
   } else {
     deferred.resolve(vm.get('validationErrors'));
   }
@@ -70185,41 +70292,50 @@ Ext.define('FormsRenderer.view.form.RendererController', {extend:Ext.app.ViewCon
 }, resetForm:function() {
   const me = this;
   me.getViewModel().setData(Ext.clone(me.initialState));
-}, callClientValidation:function() {
+}, callClientValidation:function(componentsToBeValidated) {
   const me = this, vm = me.getViewModel();
+  let allRequiredConstraintsFulfilled = true;
+  componentsToBeValidated.forEach(component => {
+    if (component.setError) {
+      const requiredConstraintFulfilled = component.validate();
+      allRequiredConstraintsFulfilled = allRequiredConstraintsFulfilled && requiredConstraintFulfilled;
+    }
+  });
   if (!me.schemaValidator) {
-    vm.set('validationOk.client', true);
-    return true;
+    vm.set('validationOk.client', allRequiredConstraintsFulfilled);
+    return allRequiredConstraintsFulfilled;
   }
-  const valid = me.schemaValidator(me.getViewModel().get('data'));
-  if (!valid) {
+  const validDataSchema = me.schemaValidator(me.getViewModel().get('data'));
+  if (!validDataSchema) {
     vm.set('validationErrors.client', me.schemaValidator.errors);
-    me.applyValidationErrors(me.schemaValidator.errors);
+    me.applyValidationErrors(me.schemaValidator.errors, componentsToBeValidated);
   } else {
     vm.set('validationErrors.client', []);
   }
+  const valid = validDataSchema && allRequiredConstraintsFulfilled;
   vm.set('validationOk.client', valid);
   return valid;
-}, callServerValidation:function(source) {
+}, callServerValidation:function(source, componentsToBeValidated) {
   const me = this, view = me.getView(), deferred = new Ext.Deferred();
   if (!view.config.formConfig.configuration.validationUrl) {
     deferred.reject('missing validationUrl');
     return deferred.promise;
   }
-  me.callBackend(view.config.formConfig.configuration.validationUrl, 'validate', source ? source.formComponentConfig : null).then(responseJson => {
+  me.callBackend(view.config.formConfig.configuration.validationUrl, 'validate', source ? source.formComponentConfig : null, componentsToBeValidated).then(responseJson => {
     deferred.resolve(responseJson);
   }, deferred.reject);
   return deferred.promise;
-}, applyValidationErrors:function(errors) {
-  const me = this, view = me.getView(), unreportedErrors = [];
+}, applyValidationErrors:function(errors, componentsToBeValidated) {
+  const me = this, view = me.getView();
+  let unreportedErrors = [];
   errors.forEach(errorObj => {
     if (errorObj.instancePath) {
-      const targetComponents = view.query('[isFormsComponent]').filter(component => {
+      const targetComponents = componentsToBeValidated.filter(component => {
         return component.initialConfig.bind && component.initialConfig.bind.value === FormsRenderer.ConfigParser.getBindString(`/data${errorObj.instancePath}`);
       });
       if (targetComponents.length > 0) {
         targetComponents.forEach(targetComponent => {
-          if (targetComponent.setError) {
+          if (targetComponent.setError && targetComponent.validate() && !targetComponent.getDisabled()) {
             targetComponent.setError(FormsRenderer.ConfigParser.getLocalizedValue(view.config.formConfig, errorObj.message));
           }
         });
@@ -70230,6 +70346,18 @@ Ext.define('FormsRenderer.view.form.RendererController', {extend:Ext.app.ViewCon
       unreportedErrors.push(errorObj);
     }
   });
+  function isNotErrorOfFormsComponent(errorObj) {
+    if (errorObj.instancePath) {
+      const targetComponents = view.query('[isFormsComponent]').filter(component => {
+        return component.initialConfig.bind && component.initialConfig.bind.value === FormsRenderer.ConfigParser.getBindString(`/data${errorObj.instancePath}`);
+      });
+      if (targetComponents.length > 0) {
+        return false;
+      }
+    }
+    return true;
+  }
+  unreportedErrors = unreportedErrors.filter(isNotErrorOfFormsComponent);
   let errorWindow = Ext.first('#errorWindow');
   if (unreportedErrors.length > 0) {
     console.warn(JSON.stringify(unreportedErrors, null, 3));
@@ -70254,7 +70382,7 @@ Ext.define('FormsRenderer.view.form.RendererController', {extend:Ext.app.ViewCon
   let returnPromise;
   if (!view.config.formConfig.configuration.submitUrl) {
     returnPromise = Ext.Deferred.rejected('missing submitUrl');
-  } else if (!me.callClientValidation()) {
+  } else if (!me.callClientValidation(view.query('[isFormsComponent]'))) {
     returnPromise = Ext.Deferred.rejected('Validation failed');
   } else {
     let sourceObj;
@@ -70267,19 +70395,22 @@ Ext.define('FormsRenderer.view.form.RendererController', {extend:Ext.app.ViewCon
   }
   returnPromise.then(Ext.toast.bind(Ext, 'Submit successful', 5000), Ext.toast.bind(Ext));
   return returnPromise;
-}, onDataChange:function() {
+}, onDataChange:function(source, newValue, oldValue) {
+  source.hasChanged = true;
+  source.oldValue = oldValue;
+  source.newValue = newValue;
+}, onBlur:function(source) {
   const me = this, view = me.getView();
-  if (view.config.formConfig.configuration.validateOnChange === true) {
-    me.validateData();
-  }
-}, onBlur:function() {
-  const me = this, view = me.getView();
+  source.hasFocus = false;
   if (view.config.formConfig.configuration.validateOnBlur === true) {
-    me.validateData();
-  } else {
-    me.callClientValidation();
+    me.validateData(source, true);
+  } else if (view.config.formConfig.configuration.validateOnChange === true) {
+    if (source.hasChanged && (source.oldValue || source.newValue)) {
+      source.hasChanged = false;
+      me.validateData(source, true);
+    }
   }
-}, callBackend:function(url, action, originator) {
+}, callBackend:function(url, action, originator, componentsToBeValidated) {
   const me = this, view = me.getView(), vm = me.getViewModel(), deferred = new Ext.Deferred();
   view.setMasked({xtype:'loadmask', message:'Lädt'});
   Ext.Ajax.request({url:url, jsonData:{action:action, originator:originator, form:view.config.formConfig}, success:function(response) {
@@ -70289,7 +70420,7 @@ Ext.define('FormsRenderer.view.form.RendererController', {extend:Ext.app.ViewCon
       if (responseJson.validationErrors) {
         vm.set('validationErrors.server', responseJson.validationErrors);
         vm.set('validationOk.server', !Ext.isArray(responseJson.validationErrors) || responseJson.validationErrors.length <= 0);
-        me.applyValidationErrors(responseJson.validationErrors);
+        me.applyValidationErrors(responseJson.validationErrors, componentsToBeValidated);
       }
       if (responseJson.result === 'success') {
         if (responseJson.action) {
@@ -70360,20 +70491,8 @@ Ext.define('FormsRenderer.view.form.RendererController', {extend:Ext.app.ViewCon
   });
 }, printForm:function() {
   print();
-}, setDataFunction:function(source) {
-  const targetBindString = String(source.formComponentConfig.target).replaceAll('/', '.');
-  const newValue = source.formComponentConfig.value;
-  const vm = this.getViewModel();
-  let binding = vm.bind({bindTo:`{data.${targetBindString}}`, deep:true}, function(s) {
-    null;
-  });
-  let result = newValue;
-  if (newValue === '++') {
-    result = binding.getValue() + 1;
-  } else if (newValue === '--') {
-    result = binding.getValue() - 1;
-  }
-  binding.setValue(result);
+}, setTargetPropertyToValue:function(source) {
+  this.getViewModel().set(source.getBind().target.stub.path, source.getValue());
 }});
 Ext.define('FormsRenderer.view.form.table.column.Text', {extend:Ext.grid.column.Text, alias:'widget.formsTextColumn', mixins:[FormsRenderer.view.form.component.Mixin], formConfig:undefined, formComponentConfig:undefined, constructor:function(config) {
   const me = this;
