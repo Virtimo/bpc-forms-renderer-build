@@ -70192,9 +70192,13 @@ Ext.define('FormsRenderer.view.form.Renderer', {extend:Ext.Panel, alias:'widget.
 }}}, listeners:{painted:function() {
   window.formsRendererReady = true;
 }}});
-Ext.define('FormsRenderer.view.form.RendererController', {extend:Ext.app.ViewController, alias:'controller.formsRendererController', schemaValidator:undefined, initialFormConfig:undefined, control:{'field':{change:'onDataChange', blur:'onBlur'}, '[action\x3dreset]':{tap:'resetForm'}, '[action\x3dvalidate]':{tap:'validateData'}, '[action\x3dsubmit]':{tap:'submitData'}, '[action\x3dprint]':{tap:'printForm'}, '[action\x3dsetProperty]':{tap:'setTargetPropertyToValue'}}, init:function(view) {
+Ext.define('FormsRenderer.view.form.RendererController', {extend:Ext.app.ViewController, alias:'controller.formsRendererController', schemaValidator:undefined, initialFormConfig:undefined, control:{'field':{change:'onDataChange', blur:'onBlur'}, '[action\x3dreset]':{tap:'resetForm'}, '[action\x3dvalidate]':{tap:'validateData'}, '[action\x3dsubmit]':{tap:'submitData'}, '[action\x3dprint]':{tap:'printForm'}, '[action\x3dsetProperty]':{tap:'setTargetPropertyToValue'}}, init:async function(view) {
   const me = this;
-  me.initComponents();
+  me.readyPromise = new Ext.Deferred();
+  await me.initComponents();
+  me.readyPromise.resolve();
+}, getReadyPromise:function() {
+  return this.readyPromise;
 }, initViewModel:function(vm) {
   const me = this, view = me.getView();
   vm.setData(view.config.formConfig.state);
@@ -70206,27 +70210,31 @@ Ext.define('FormsRenderer.view.form.RendererController', {extend:Ext.app.ViewCon
   const language = FormsRenderer.ConfigParser.getLocalization(formConfig);
   formConfig.state.language = language;
   FormsRenderer.ConfigParser.translateObject(language, formConfig);
-}, initComponents:function() {
+}, initComponents:async function() {
   const me = this, view = me.getView(), formConfig = view.config.formConfig;
   view.removeAll();
   me.initStyling(formConfig);
   me.initLanguage();
-  FormsRenderer.ConfigParser.initAsync(formConfig).then(() => {
-    let formItems = FormsRenderer.ConfigParser.getComponents(formConfig);
-    if (formItems.length === 0) {
-      formItems = [{xtype:'formsError', message:'\x3cb\x3eForms Renderer - No Items\x3c/b\x3e'}];
-    }
+  await FormsRenderer.ConfigParser.initAsync(formConfig);
+  let formItems = FormsRenderer.ConfigParser.getComponents(formConfig);
+  if (formItems.length === 0) {
+    formItems = [{xtype:'formsError', message:'\x3cb\x3eForms Renderer - No Items\x3c/b\x3e'}];
+  }
+  try {
     view.add(formItems);
-    if (formConfig.dataSchema) {
-      try {
-        me.schemaValidator = ajv.compile(formConfig.dataSchema);
-      } catch (e) {
-        view.removeAll();
-        view.setItems({xtype:'formsError', message:`invalid dataSchema in forms config<br>${e.message}`});
-      }
+  } catch (e) {
+    Ext.log({msg:'ERROR: Adding form items incomplete. Bind-Strings may be wrong.', dump:e, stack:true, level:'error'});
+    console.warn(formItems);
+  }
+  if (formConfig.dataSchema) {
+    try {
+      me.schemaValidator = ajv.compile(formConfig.dataSchema);
+    } catch (e) {
+      view.removeAll();
+      view.setItems({xtype:'formsError', message:`invalid dataSchema in forms config<br>${e.message}`});
     }
-    me.resetForm();
-  });
+  }
+  await me.resetForm();
 }, initStyling:function(formConfig) {
   const configuration = formConfig.configuration;
   if (configuration) {
@@ -70263,7 +70271,7 @@ Ext.define('FormsRenderer.view.form.RendererController', {extend:Ext.app.ViewCon
       }
     }
   }
-}, validateData:function(source, onlyValidateSource) {
+}, validateData:async function(source, onlyValidateSource) {
   const me = this, view = me.getView(), vm = me.getViewModel(), deferred = new Ext.Deferred();
   if (onlyValidateSource !== true) {
     onlyValidateSource = false;
@@ -70285,7 +70293,7 @@ Ext.define('FormsRenderer.view.form.RendererController', {extend:Ext.app.ViewCon
     deferred.resolve(vm.get('validationErrors'));
   }
   return deferred.promise;
-}, resetForm:function() {
+}, resetForm:async function() {
   const me = this, view = me.getView(), vm = me.getViewModel();
   const initState = Ext.clone(me.initialFormConfig.state);
   const language = vm.get('language');
@@ -70295,7 +70303,7 @@ Ext.define('FormsRenderer.view.form.RendererController', {extend:Ext.app.ViewCon
   vm.setData(view.config.formConfig.state);
   vm.notify();
   const allComponents = view.query('[isFormsComponent]');
-  me.validateData(allComponents);
+  await me.validateData(allComponents);
   allComponents.forEach(component => {
     if (component.setError) {
       component.setError(null);
@@ -70603,8 +70611,8 @@ Ext.define('FormsRenderer.view.main.MainController', {extend:Ext.app.ViewControl
   } else {
     me.setContent({xtype:'formsRenderer', formConfig:formConfig});
   }
-}, onMessage:function(dataJson, event) {
-  const me = this, renderer = me.getView().down('formsRenderer');
+}, onMessage:async function(dataJson, event) {
+  const me = this;
   if (!dataJson || !dataJson.requestName || !dataJson.requestName) {
     return;
   }
@@ -70612,21 +70620,28 @@ Ext.define('FormsRenderer.view.main.MainController', {extend:Ext.app.ViewControl
     const formConfig = dataJson.request;
     me.createForm(formConfig);
     me.sendMessageResponse(dataJson, event, {});
-  } else if (dataJson.requestName === 'getFormConfig' && renderer) {
-    me.sendMessageResponse(dataJson, event, renderer.getFormConfig());
-  } else if (dataJson.requestName === 'setData' && renderer) {
-    renderer.getViewModel().set('data', Ext.apply(renderer.getViewModel().get('data'), dataJson.request));
-    me.sendMessageResponse(dataJson, event, renderer.getViewModel().get('data'));
-  } else if (dataJson.requestName === 'validateData' && renderer) {
-    renderer.getController().validateData().then(me.sendMessageResponse.bind(me, dataJson, event), me.sendMessageResponse.bind(me, dataJson, event));
-  } else if (dataJson.requestName === 'submitData' && renderer) {
-    renderer.getController().submitData(dataJson.request).then(me.sendMessageResponse.bind(me, dataJson, event), me.sendMessageResponse.bind(me, dataJson, event));
-  } else if (dataJson.requestName === 'resetForm' && renderer) {
-    renderer.getController().resetForm();
-    me.sendMessageResponse(dataJson, event, {});
-  } else if (dataJson.requestName === 'printForm' && renderer) {
-    renderer.getController().printForm();
-    me.sendMessageResponse(dataJson, event, {});
+  } else {
+    const renderer = me.getView().down('formsRenderer');
+    if (renderer) {
+      const readyPromise = renderer.getController().getReadyPromise();
+      await readyPromise;
+      if (dataJson.requestName === 'getFormConfig') {
+        me.sendMessageResponse(dataJson, event, renderer.getFormConfig());
+      } else if (dataJson.requestName === 'setData') {
+        renderer.getViewModel().set('data', Ext.apply(renderer.getViewModel().get('data'), dataJson.request));
+        me.sendMessageResponse(dataJson, event, renderer.getViewModel().get('data'));
+      } else if (dataJson.requestName === 'validateData') {
+        renderer.getController().validateData().then(me.sendMessageResponse.bind(me, dataJson, event), me.sendMessageResponse.bind(me, dataJson, event));
+      } else if (dataJson.requestName === 'submitData') {
+        renderer.getController().submitData(dataJson.request).then(me.sendMessageResponse.bind(me, dataJson, event), me.sendMessageResponse.bind(me, dataJson, event));
+      } else if (dataJson.requestName === 'resetForm') {
+        renderer.getController().resetForm();
+        me.sendMessageResponse(dataJson, event, {});
+      } else if (dataJson.requestName === 'printForm') {
+        renderer.getController().printForm();
+        me.sendMessageResponse(dataJson, event, {});
+      }
+    }
   }
 }, sendMessageResponse:function(sourceEventData, sourceEvent, response) {
   const me = this;
