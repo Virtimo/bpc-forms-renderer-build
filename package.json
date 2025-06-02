@@ -1,6 +1,6 @@
 {
   "name": "@virtimo/bpc-forms-renderer-build",
-  "version": "4.2.11-SNAPSHOT.1",
+  "version": "4.2.12",
   "description": "Build of Forms Renderer for BPC Forms",
   "main": "app.js",
   "repository": {
