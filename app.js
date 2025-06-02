@@ -49840,31 +49840,6 @@ Ext.define('Ext.menu.Menu', {extend:Ext.Panel, xtype:'menu', isMenu:true, config
   return Ext.create(menu);
 }}, deprecated:{'6.5':{configs:{plain:{message:'To achieve classic toolkit "plain" effect, use "indented".'}, showSeparator:{message:'To achieve classic toolkit "showSeparator" effect, use "separator".'}}}}});
 Ext.define('Ext.theme.material.menu.Menu', {override:'Ext.menu.Menu', config:{indented:false}});
-Ext.define('Ext.Chip', {extend:Ext.Component, xtype:'chip', isChip:true, focusable:false, tabIndex:null, classCls:Ext.baseCSSPrefix + 'chip', hasIconCls:Ext.baseCSSPrefix + 'has-icon', closableCls:Ext.baseCSSPrefix + 'closable', element:{reference:'element', children:[{reference:'bodyElement', cls:Ext.baseCSSPrefix + 'body-el', children:[{reference:'iconElement', cls:Ext.baseCSSPrefix + 'icon-el ' + Ext.baseCSSPrefix + 'font-icon'}, {reference:'textElement', cls:Ext.baseCSSPrefix + 'text-el'}, {reference:'closeElement', 
-cls:Ext.baseCSSPrefix + 'close-el ' + Ext.baseCSSPrefix + 'font-icon', listeners:{click:'onClick'}}]}]}, config:{icon:false, iconCls:null, text:null, closable:null, closeHandler:null, scope:null}, defaultBindProperty:'text', onClick:function(e) {
-  var me = this, handler = me.getCloseHandler();
-  Ext.callback(handler, me.getScope(), [me, e], 0, me);
-}, applyIcon:function(icon) {
-  return Ext.resolveResource(icon);
-}, updateClosable:function(closable) {
-  this.el.toggleCls(this.closableCls, closable);
-}, updateIcon:function(icon) {
-  var me = this, iconEl = me.iconElement, hasIconCls = me.hasIconCls;
-  if (icon) {
-    iconEl.setStyle('background-image', 'url(' + icon + ')');
-    me.addCls(hasIconCls);
-  } else {
-    iconEl.setStyle('background-image', '');
-    if (!me.getIconCls()) {
-      me.removeCls(hasIconCls);
-    }
-  }
-}, updateIconCls:function(iconCls, oldIconCls) {
-  this.iconElement.replaceCls(oldIconCls, iconCls);
-  this.el.toggleCls(this.hasIconCls, !!iconCls);
-}, updateText:function(text) {
-  this.textElement.setHtml(Ext.htmlEncode(text));
-}});
 Ext.define('Ext.Dialog', {extend:Ext.Panel, xtype:['dialog', 'window'], alternateClassName:['Ext.Window', 'Ext.window.Window'], isDialog:true, isWindow:true, ariaRole:'dialog', classCls:Ext.baseCSSPrefix + 'dialog', cachedConfig:{dismissAction:['cancel', 'abort', 'no', 'close'], maximizeAnimation:{easing:'ease-in', from:{opacity:0.6}, to:{opacity:1}}, maximizeProxy:{centered:false, draggable:false, modal:false, showAnimation:null, hideAnimation:null}, maximizeTool:{itemId:'maximize', tooltip:'Maximize to fullscreen'}, 
 restoreAnimation:{easing:'ease-in', from:{opacity:1}, to:{opacity:0.6}}, restoreTool:{itemId:'restore', tooltip:'Restore to original size'}}, config:{constrainDrag:true, dismissHandler:null, maximizable:null, maximized:null, maskTapHandler:null, restorable:null}, border:true, bodyBorder:false, centered:true, floated:true, focusable:false, tabIndex:-1, draggable:{handle:'.' + Ext.baseCSSPrefix + 'draggable', listeners:{beforedragstart:'onBeforeDragDialog', scope:'this'}}, keyMap:{ESC:'onEscape', scope:'this'}, 
 modal:true, shadow:true, headerCls:Ext.baseCSSPrefix + 'dialogheader', titleCls:Ext.baseCSSPrefix + 'dialogtitle', toolCls:[Ext.baseCSSPrefix + 'paneltool', Ext.baseCSSPrefix + 'dialogtool'], hideMode:'offsets', hideAnimation:{type:'popOut', duration:250, easing:'ease-out'}, showAnimation:{type:'popIn', duration:150, easing:'ease-out'}, initialize:function() {
@@ -57136,74 +57111,6 @@ Ext.define('Ext.dataview.DataView', {extend:Ext.dataview.Abstract, alternateClas
   }
   return next;
 }}});
-Ext.define('Ext.dataview.ChipView', {extend:Ext.dataview.DataView, xtype:'chipview', classCls:Ext.baseCSSPrefix + 'chipview', hasIconCls:Ext.baseCSSPrefix + 'has-icon', closableCls:Ext.baseCSSPrefix + 'closable', iconElCls:Ext.baseCSSPrefix + 'icon-el ' + Ext.baseCSSPrefix + 'font-icon', itemTpl:'\x3cdiv class\x3d"' + Ext.baseCSSPrefix + 'body-el"\x3e' + '\x3cdiv class\x3d"{_chipIconCls}" style\x3d"{_chipIconStyle}"\x3e\x3c/div\x3e' + '\x3cdiv class\x3d"' + Ext.baseCSSPrefix + 'text-el"\x3e' + '{_chipText}' + 
-'\x3c/div\x3e' + '\x3cdiv class\x3d"' + Ext.baseCSSPrefix + 'close-el ' + Ext.baseCSSPrefix + 'font-icon"\x3e\x3c/div\x3e' + '\x3c/div\x3e', config:{iconField:null, iconClsField:null, displayField:'text', closableField:null, closable:true, closeHandler:null, scope:null, itemUi:null, displayTpl:null}, listeners:{childtap:'onChipTap', scope:'this', priority:3000}, getItemClass:function(values) {
-  var me = this, result = [me.callParent([values])], chipCls = Ext.Chip.prototype.getClassCls(), chipClsLen = chipCls.length, uis = me.getItemUi(), uiLen = uis && uis.length, i, j, c;
-  for (i = 0; i < chipClsLen; i++) {
-    c = chipCls[i];
-    result.push(c);
-    for (j = 0; j < uiLen; j++) {
-      result.push(c + '-' + uis[j]);
-    }
-  }
-  if (me.hasIcon(values)) {
-    result.push(me.hasIconCls);
-  }
-  if (me.getChipClosable(values)) {
-    result.push(me.closableCls);
-  }
-  return result.join(' ');
-}, onChipTap:function(chip, location) {
-  var me = this, handler = me.getCloseHandler();
-  if (handler && location.event.getTarget('.' + Ext.baseCSSPrefix + 'close-el')) {
-    return Ext.callback(handler, me.getScope(), [me, location], 0, me);
-  }
-}, prepareData:function(data, index, record) {
-  var me = this, tpl = me.getDisplayTpl();
-  data._chipIconCls = me.getChipIconCls(data);
-  data._chipIconStyle = me.getChipIconStyle(data);
-  data._chipText = tpl ? tpl.apply(data) : data[me.getDisplayField()];
-  return data;
-}, privates:{applyItemUi:function(value) {
-  return typeof value === 'string' ? value.split(' ') : Ext.Array.from(value);
-}, updateItemUi:function() {
-  this.doRefresh();
-}, applyDisplayTpl:function(config) {
-  return Ext.XTemplate.get(config);
-}, updateDisplayTpl:function() {
-  if (!this.isConfiguring) {
-    this.refresh();
-  }
-}, getChipIconUrl:function(values) {
-  return Ext.resolveResource(values[this.getIconField()]);
-}, getChipIconStyle:function(values) {
-  var iconUrl = this.getChipIconUrl(values);
-  return iconUrl ? 'background-image: url(' + iconUrl + ')' : '';
-}, hasIcon:function(values) {
-  var iconClsField = this.getIconClsField();
-  return this.getChipIconUrl(values) ? true : iconClsField ? !!values[iconClsField] : false;
-}, getChipIconCls:function(values) {
-  var iconClsField = this.getIconClsField(), iconCls = iconClsField ? values[iconClsField] : '';
-  return this.iconElCls + ' ' + iconCls;
-}, getChipClosable:function(values) {
-  var closableField = this.getClosableField();
-  return closableField ? !!values[closableField] : this.getClosable();
-}, _onChildEvent:function(fn, e) {
-  if (!this.ownerField || e.target !== this.ownerField.inputElement.dom) {
-    return this.callParent([fn, e]);
-  }
-  return {};
-}, syncEmptyState:function() {
-  var field = this.ownerField;
-  if (field) {
-    field.syncEmptyState();
-    field.syncLabelPlaceholder(false);
-  }
-}, syncItemRecord:function(options) {
-  var me = this, record = options.record, recordIndex = options ? options.recordIndex : me.store.indexOf(record), data = me.gatherData(record, recordIndex);
-  options.item.className = me.getItemClass(data);
-  me.callParent([options]);
-}}});
 Ext.define('Ext.dataview.IndexBar', {extend:Ext.Component, alternateClassName:'Ext.IndexBar', xtype:'indexbar', cachedConfig:{letters:'ABCDEFGHIJKLMNOPQRSTUVWXYZ'}, config:{animation:true, autoHide:false, dynamic:false, listPrefix:null, indicator:true}, eventedConfig:{direction:'vertical'}, top:0, bottom:0, left:0, right:0, inheritUi:true, autoHideCls:Ext.baseCSSPrefix + 'autohide', classCls:Ext.baseCSSPrefix + 'indexbar', horizontalCls:Ext.baseCSSPrefix + 'horizontal', indexedCls:Ext.baseCSSPrefix + 
 'indexed', indexedHorizontalCls:Ext.baseCSSPrefix + 'indexed-horizontal', indexedVerticalCls:Ext.baseCSSPrefix + 'indexed-vertical', indexedNoAutoHideCls:Ext.baseCSSPrefix + 'indexed-no-autohide', indicatorCls:Ext.baseCSSPrefix + 'indexbar-indicator', pressedCls:Ext.baseCSSPrefix + 'pressed', verticalCls:Ext.baseCSSPrefix + 'vertical', element:{reference:'element', cls:Ext.baseCSSPrefix + 'unselectable', children:[{reference:'bodyElement', cls:Ext.baseCSSPrefix + 'body-el'}]}, initialize:function() {
   var me = this, bodyElement = me.bodyElement;
@@ -58368,83 +58275,6 @@ Ext.define('Ext.field.CheckboxGroup', {extend:Ext.field.FieldGroupContainer, xty
   }
   return values;
 }});
-Ext.define('Ext.field.ChipViewNavigationModel', {extend:Ext.dataview.BoundListNavigationModel, alias:'navmodel.fieldchipview', privates:{getKeyNavCfg:function(view) {
-  var me = this, eventEl;
-  if (this.keyboard !== false) {
-    eventEl = (view.ownerField || view).getFocusEl();
-    if (eventEl) {
-      return {target:eventEl, eventName:'keydown', processEvent:view.ownerField ? me.processViewEvent : undefined, processEventScope:me, defaultEventAction:'stopEvent', 'delete':me.onKeyDelete, backspace:me.onKeyDelete, right:me.onKeyRight, left:me.onKeyLeft, A:{ctrl:true, handler:me.onSelectAllKeyPress}, priority:1002, scope:me};
-    }
-  }
-}, processViewEvent:function(e) {
-  var me = this, ownerField = me.getView().ownerField;
-  if (ownerField) {
-    if (ownerField.inputElement.dom.value.length || !ownerField.getValueCollection().getCount()) {
-      me.clearLocation();
-      return;
-    }
-  }
-  return e;
-}, onKeyLeft:function(e) {
-  var me = this, view = me.getView(), location = me.location, options = {event:e};
-  e.preventDefault();
-  if (location) {
-    if (!location.isFirstDataItem()) {
-      if (!e.shiftKey) {
-        view.getSelectable().deselectAll();
-      }
-      me.movePrevious(options);
-    }
-  } else {
-    me.setLocation(view.getLastDataItem(), options);
-  }
-  return true;
-}, onKeyRight:function(e) {
-  var me = this, view = me.getView(), location = me.location;
-  e.preventDefault();
-  if (location) {
-    if (location.isLastDataItem()) {
-      view.getSelectable().deselectAll();
-      me.clearLocation();
-    } else {
-      if (!e.shiftKey) {
-        view.getSelectable().deselectAll();
-      }
-      me.moveNext({event:e});
-    }
-  }
-  return true;
-}, onKeyDelete:function(e) {
-  var view = this.getView(), ownerField = view.ownerField, selModel, selected, location, isLast;
-  if (ownerField) {
-    selModel = view.getSelectable();
-    selected = selModel.getSelectedRecords();
-    if (selected.length) {
-      selModel.deselect(selected);
-      ownerField.getValueCollection().remove(selected);
-      location = this.getLocation();
-      if (location) {
-        isLast = location.isLast();
-        if (isLast && e.keyCode === e.DELETE) {
-          this.clearLocation();
-        } else if (view.dataItems.length) {
-          selModel.select(location.refresh().record);
-        }
-      }
-    } else if (e.keyCode === e.BACKSPACE) {
-      this.onKeyLeft(e);
-    }
-  }
-}, onNavigate:function(event) {
-  var view = this.getView(), ownerField = view.ownerField, location = this.getLocation;
-  if (ownerField) {
-    if (!location || !view.getSelectable().isSelected(location.record)) {
-      Ext.dataview.NavigationModel.prototype.onNavigate.call(this, event);
-    }
-  } else {
-    this.callParent([event]);
-  }
-}}});
 Ext.define('Ext.field.trigger.Expand', {extend:Ext.field.trigger.Trigger, xtype:'expandtrigger', alias:'trigger.expand', classCls:Ext.baseCSSPrefix + 'expandtrigger', isExpandTrigger:true, handler:'onExpandTap', scope:'this'});
 Ext.define('Ext.field.Picker', {extend:Ext.field.Text, xtype:'pickerfield', config:{picker:{lazy:true, $value:'auto'}, floatedPicker:{lazy:true, $value:null}, edgePicker:{lazy:true, $value:null}, clearable:false, matchFieldWidth:true, floatedPickerAlign:'tl-bl?', pickerSlotAlign:'center', hideTrigger:false, focusTrap:{lazy:true, $value:{tabIndex:-1, cls:'x-hidden-clip'}}}, triggers:{expand:{type:'expand'}}, alignTarget:'bodyElement', keyMap:{scope:'this', DOWN:'onDownArrow', ESC:'onEsc'}, keyMapTarget:'inputElement', 
 autoComplete:false, classCls:Ext.baseCSSPrefix + 'pickerfield', initialize:function() {
@@ -58962,996 +58792,7 @@ Ext.define('Ext.picker.Picker', {extend:Ext.Sheet, xtype:'picker', alternateClas
 }, getValues:function() {
   return this.getValue();
 }});
-Ext.define('Ext.picker.Tablet', {extend:Ext.Panel, xtype:'tabletpicker', isPicker:true, focusable:true, tabIndex:-1});
-Ext.define('Ext.picker.SelectPicker', {extend:Ext.picker.Picker, xtype:'selectpicker', constructor:function(config) {
-  var ownerField = config.ownerCmp, id = ownerField.getId() + '-picker', realConfig = Ext.apply({ownerField:ownerField, id:id, slots:[{id:id + '-slot', ownerField:ownerField, selectable:config.selectable || true, align:ownerField.getPickerSlotAlign(), name:ownerField.getValueField(), valueField:ownerField.getValueField(), displayField:ownerField.getDisplayField(), value:ownerField.getValue(), store:ownerField._pickerStore || ownerField.getStore(), itemTpl:ownerField.getItemTpl(), itemCls:ownerField.getItemCls()}]}, 
-  config);
-  if (ownerField.getMultiSelect()) {
-    realConfig.cancelButton = false;
-    realConfig.slots[0].selectable = {selected:ownerField.getValueCollection(), selectedRecord:ownerField.getSelection(), deselectable:true, mode:'multi'};
-  } else {
-    realConfig.listeners = {change:'onPickerChange', scope:this};
-  }
-  this.callParent([realConfig]);
-  this.slot = Ext.getCmp(id + '-slot');
-}, onPickerChange:function(picker, value) {
-  var ownerField = this.ownerField;
-  ownerField.setValue(ownerField.findRecordByValue(value[ownerField.getValueField()]));
-}, refresh:function() {
-  this.slots.refresh();
-}, setDisableSelection:function(disableSelection) {
-  return this.slot.setDisableSelection(disableSelection);
-}, setValue:function(value) {
-  if (this.slot) {
-    this.slot.setValue(value);
-  }
-  return this;
-}, getEmptyText:function() {
-  return this.slot.getEmptyText();
-}, getItemCount:function() {
-  return this.slot.getItemCount();
-}, getNavigationModel:function() {
-  return this.slot.getNavigationModel();
-}, getSelectable:function() {
-  return this.slot.getSelectable();
-}, getViewItems:function() {
-  return this.slot.getViewItems();
-}, getStore:function() {
-  return this.slot.getStore();
-}, setStore:function(store) {
-  this.slot.setStore(store);
-}, deselectAll:function() {
-  this.slot.deselectAll();
-}});
-Ext.define('Ext.field.Select', {extend:Ext.field.Picker, xtype:'selectfield', alternateClassName:'Ext.form.Select', isSelectField:true, config:{valueCollection:{rootProperty:'data'}, valueField:'value', itemTpl:false, itemCls:null, displayTpl:null, displayField:'text', store:null, options:null, hiddenName:null, autoSelect:false, autoFocus:true, autoFocusLast:true, selection:null, autoLoadOnValue:false, forceSelection:true, valueNotFoundText:null, selectOnTab:true, multiSelect:null, delimiter:',', 
-filterPickList:false, collapseOnSelect:null, chipView:{$value:{xtype:'chipview', tabIndex:null, focusable:false, itemsFocusable:false, focusedCls:'', navigationModel:'fieldchipview', selectable:{mode:'multi'}, closable:true, closeHandler:'up.onChipCloseTap'}, lazy:true}, recordCreator:null, recordCreatorScope:null}, editable:false, floatedPicker:{xtype:'boundlist', infinite:false, navigationModel:{disabled:true}, scrollToTopOnRefresh:false, loadingHeight:70, maxHeight:300, floated:true, axisLock:true, 
-hideAnimation:null}, edgePicker:{xtype:'selectpicker', cover:true}, classCls:Ext.baseCSSPrefix + 'selectfield', multiSelectCls:Ext.baseCSSPrefix + 'multiselect', twoWayBindable:{selection:1}, publishes:{selection:1}, applyValueCollection:function(valueCollection) {
-  if (!valueCollection.isCollection) {
-    valueCollection = new Ext.util.Collection(valueCollection);
-  }
-  valueCollection.addObserver(this);
-  return valueCollection;
-}, createSelectionRecord:function(data) {
-  var Model = this.getStore().getModel();
-  return new Model(data);
-}, completeEdit:Ext.emptyFn, expand:function() {
-  if (this.getStore()) {
-    this.callParent();
-  }
-}, getRefItems:function(deep) {
-  var me = this, result = me.callParent([deep]), chipView = me.chipView;
-  if (chipView) {
-    result.push(chipView);
-    if (deep) {
-      Ext.Array.push(result, chipView.getRefItems(deep));
-    }
-  }
-  return result;
-}, maybeCollapse:function(event) {
-  var record = event.to && event.to.record, multi = this.getMultiSelect(), selection = this.getSelection();
-  if (!multi && record === selection) {
-    this.collapse();
-  }
-}, onCollectionRemove:function(valueCollection, chunk) {
-  var me = this, selection = valueCollection.getRange();
-  if (!chunk.replacement) {
-    me.processingCollectionMutation = true;
-    me.setSelection(selection.length ? me.getMultiSelect() ? selection : selection[0] : null);
-    me.processingCollectionMutation = false;
-  }
-}, onCollectionAdd:function(valueCollection, adds) {
-  var selection = valueCollection.getRange();
-  this.processingCollectionMutation = true;
-  this.setSelection(this.getMultiSelect() ? selection : selection[0]);
-  this.processingCollectionMutation = false;
-}, onCollectionEndUpdate:function() {
-  var me = this, pickerStore = me._pickerStore, chipView, chipViewNavModel;
-  if (me.getMultiSelect()) {
-    chipView = me.chipView;
-    chipViewNavModel = chipView.getNavigationModel();
-    if (chipViewNavModel.location && !me.getValueCollection().contains(chipViewNavModel.location.record)) {
-      chipViewNavModel.clearLocation();
-    }
-    chipView.getSelectable().refreshSelection();
-  } else {
-    me.setFieldDisplay();
-  }
-  if (pickerStore && me.getFilterPickList()) {
-    pickerStore.getData().onFilterChange();
-  }
-}, clearValue:function() {
-  var me = this;
-  me.forceSetValue(null);
-  me.syncEmptyState();
-}, applyValue:function(value, oldValue) {
-  var me = this, store;
-  me.getOptions();
-  store = me.getStore();
-  me.syncMode = 'value';
-  if (value && value.isEntity) {
-    if (!store || !store.getDataSource().contains(value)) {
-      value.isEntered = true;
-    }
-    me.setSelection(value);
-    return;
-  }
-  if (me.isConfiguring) {
-    me.originalValue = value;
-  }
-  if (store && value) {
-    if (me.getAutoLoadOnValue() && !store.isLoaded() && !store.hasPendingLoad()) {
-      store.load();
-    }
-  }
-  return me.transformValue(value);
-}, updateValue:function(value, oldValue) {
-  var me = this;
-  me.syncValue();
-  if (me.getMultiSelect() ? !value || !oldValue || !Ext.Array.equals(value, oldValue) : value !== oldValue) {
-    Ext.field.Field.prototype.updateValue.call(this, value, oldValue);
-  }
-}, transformValue:function(value) {
-  if (value == null || value === '') {
-    value = this.getForceSelection() ? null : '';
-  } else if (this.getMultiSelect()) {
-    value = Ext.Array.from(value);
-  } else {
-    if (Ext.isIterable(value)) {
-      value = value[0];
-    }
-  }
-  return value;
-}, findRecordByValue:function(value) {
-  var me = this, store = me.getStore(), valueField = me.getValueField(), result, ret = null;
-  if (store) {
-    result = store.byValue.get(value);
-    if (result) {
-      ret = result[0] || result;
-    }
-  }
-  if (!ret) {
-    ret = me.getValueCollection().findBy(function(record) {
-      return record.get(valueField) === value;
-    });
-  }
-  return ret;
-}, findRecordByDisplay:function(value) {
-  var store = this.getStore(), result, ret = false;
-  if (store) {
-    result = store.byText.get(value);
-    if (result) {
-      ret = result[0] || result;
-    }
-  }
-  return ret;
-}, applyChipView:function(chipView, existingChipView) {
-  return Ext.updateWidget(existingChipView, chipView, this, 'createChipView');
-}, updateChipView:function(chipView) {
-  if (chipView) {
-    chipView.on({element:'bodyElement', touchstart:'onChipBodyTouchStart', tap:'onChipBodyTap', scope:this, priority:1000});
-  }
-  this.chipView = chipView;
-}, applySelection:function(selection, oldSelection) {
-  var multiValues = selection && this.getMultiSelect();
-  selection = multiValues ? Ext.Array.from(selection) : selection;
-  if (multiValues ? !oldSelection || !Ext.Array.equals(selection, oldSelection) : selection !== oldSelection) {
-    return selection || null;
-  }
-}, updateMultiSelect:function(multiSelect) {
-  var me = this, picker = me.getConfig('picker', false, true), chipView = me.chipView, valueCollection = me.getValueCollection(), selection = valueCollection.last(), selectable;
-  if (multiSelect) {
-    if (chipView) {
-      chipView.show();
-    } else {
-      me.getChipView();
-      me.chipView.render(me.inputWrapElement.dom, me.inputElement.dom);
-    }
-    me.chipView.bodyElement.dom.appendChild(me.inputElement.dom);
-    me.setInputValue('');
-    if (selection) {
-      me.setSelection([selection]);
-    }
-  } else {
-    if (chipView) {
-      me.inputWrapElement.dom.insertBefore(me.inputElement.dom, me.afterInputElement.dom);
-      chipView.hide();
-    }
-    if (selection) {
-      valueCollection.splice(0, 1.0E99, [selection]);
-    }
-  }
-  if (picker) {
-    selectable = picker.getSelectable();
-    selectable.setConfig({deselectable:multiSelect, mode:multiSelect ? 'multi' : 'single'});
-  }
-  me.el.toggleCls(me.multiSelectCls, multiSelect);
-}, updateSelection:function(selection, oldSelection) {
-  var me = this, isNull = selection == null, multiSelect = me.getMultiSelect(), valueCollection = me.getValueCollection(), valueField = me.getValueField(), oldValue = me._value, newValue = null, picker, spliceArgs;
-  if (me._ignoreSelection || me.destroyed || me.destroying) {
-    return;
-  }
-  if (!me.processingCollectionMutation) {
-    if (isNull || oldSelection && selection.length < oldSelection.length || !valueCollection.containsAll(selection)) {
-      spliceArgs = [0, valueCollection.getCount()];
-      if (!isNull) {
-        spliceArgs.push(selection);
-      }
-      valueCollection.splice.apply(valueCollection, spliceArgs);
-      if (me.destroyed) {
-        return;
-      }
-    }
-  }
-  if (selection) {
-    if (valueField) {
-      if (multiSelect) {
-        newValue = valueCollection.collect(valueField, 'data');
-        if (newValue.length !== valueCollection.length) {
-          Ext.raise('The valueField of a combobox must be unique');
-        }
-      } else {
-        newValue = selection.get(valueField);
-      }
-      me.setValue(newValue);
-    }
-    if (me.fireEvent('select', me, selection) === false) {
-      me.setValue(oldValue);
-      me._selection = oldSelection;
-    }
-  } else {
-    me.clearValue();
-  }
-  if (me.destroyed) {
-    return;
-  }
-  picker = me.getConfig('picker', false, true);
-  if (picker && picker.isVisible()) {
-    if (!multiSelect || me.getCollapseOnSelect() || !me.getStore().getCount()) {
-      if (!multiSelect && selection && oldSelection && selection.id === oldSelection.id) {
-        picker.refresh();
-      } else {
-        if (!(selection && selection.isEntered)) {
-          me.collapse();
-        }
-      }
-    }
-  }
-}, getRecordDisplayData:function(record) {
-  return record.getData();
-}, createFloatedPicker:function() {
-  var me = this, multiSelect = me.getMultiSelect(), result = Ext.merge({ownerCmp:me, store:me._pickerStore || me.getStore(), selectable:{selected:me.getValueCollection(), selectedRecord:me.getSelection(), deselectable:!!multiSelect, mode:multiSelect ? 'multi' : 'single'}, itemTpl:me.getItemTpl(), itemCls:me.getItemCls()}, me.getFloatedPicker());
-  result.navigationModel.navigateOnSpace = !me.getEditable();
-  return result;
-}, createEdgePicker:function() {
-  return Ext.merge({ownerCmp:this}, this.getEdgePicker());
-}, realignFloatedPicker:function(picker) {
-  picker = picker || this.getConfig('picker', false, true);
-  if (picker && picker.isVisible()) {
-    if (!picker.getItemCount() && !picker.getStore().hasPendingLoad()) {
-      this.collapse();
-    }
-    this.callParent([picker]);
-  }
-}, setPickerLocation:function(fromKeyboard) {
-  var me = this, picker = me.getConfig('picker', false, true), store, location;
-  if (picker && me.expanded) {
-    store = picker.getStore();
-    if (picker.getItemCount()) {
-      location = picker.getSelectable().getLastSelected();
-      if (!location || !store.contains(location)) {
-        if (fromKeyboard || me.getAutoFocusLast()) {
-          location = picker.getNavigationModel().lastLocation;
-          if (location) {
-            location = location.refresh();
-          }
-        }
-        if (!location && (fromKeyboard || me.getAutoFocus())) {
-          location = store.getAt(0);
-        }
-      }
-      picker.getNavigationModel().setLocation(location);
-      if (!fromKeyboard) {
-        Ext.setKeyboardMode(true);
-      }
-    }
-  }
-}, updatePicker:function(picker, oldPicker) {
-  var filterPickList = this.getFilterPickList();
-  if (picker && filterPickList) {
-    picker.getSelectable().addIgnoredFilter(filterPickList);
-  }
-  this.callParent([picker, oldPicker]);
-}, updatePickerValue:function(picker, value) {
-  var name = this.getValueField(), pickerValue = {};
-  if (!value) {
-    value = this.getValue();
-  }
-  pickerValue[name] = value;
-  picker.setValue(pickerValue);
-}, applyItemTpl:function(itemTpl) {
-  if (itemTpl === false) {
-    itemTpl = '\x3cspan class\x3d"x-list-label"\x3e{' + this.getDisplayField() + ':htmlEncode}\x3c/span\x3e';
-  }
-  return itemTpl;
-}, applyDisplayTpl:function(displayTpl) {
-  if (displayTpl && !displayTpl.isTemplate) {
-    displayTpl = new Ext.XTemplate(displayTpl);
-  }
-  return displayTpl;
-}, applyOptions:function(options) {
-  if (options) {
-    var len = options.length, valueField = this.getValueField(), displayField = this.getDisplayField(), i, value, option;
-    options = Ext.Array.slice(options);
-    for (i = 0; i < len; i++) {
-      value = options[i];
-      if (Ext.isPrimitive(value)) {
-        options[i] = option = {};
-        option.id = value;
-        option[valueField] = value;
-        if (displayField && displayField !== valueField) {
-          option[displayField] = value;
-        }
-      }
-    }
-    options = Ext.data.StoreManager.lookup({fields:[valueField, displayField], data:options});
-  }
-  return options;
-}, updateOptions:function(options, oldOptions) {
-  if (options) {
-    this.setStore(options);
-  } else {
-    if (oldOptions === this.getStore()) {
-      this.setStore(null);
-    }
-  }
-}, applyStore:function(store) {
-  if (store) {
-    store = Ext.data.StoreManager.lookup(store);
-  }
-  return store;
-}, updateStore:function(store, oldStore) {
-  var me = this, valueField = me.getValueField(), displayField = me.getDisplayField(), extraKeySpec;
-  me.autoSelectCompleted = false;
-  if (oldStore) {
-    if (oldStore.getAutoDestroy()) {
-      oldStore.destroy();
-    } else {
-      oldStore.byValue = oldStore.byText = Ext.destroy(oldStore.byValue, oldStore.byText);
-    }
-  }
-  if (store) {
-    extraKeySpec = {byValue:{rootProperty:'data', unique:false, property:valueField}};
-    if (displayField !== valueField) {
-      extraKeySpec.byText = {rootProperty:'data', unique:false, property:displayField};
-    }
-    store.setExtraKeys(extraKeySpec);
-    if (displayField === valueField) {
-      store.byText = store.byValue;
-    }
-    store.on({scope:me, add:'onStoreDataChanged', remove:'onStoreDataChanged', update:'onStoreRecordUpdated', load:{fn:'onStoreLoad', priority:-1}, refresh:'onStoreRefresh'});
-    if (store.isLoaded() && !store.hasPendingLoad()) {
-      me.syncValue();
-    } else if (me.getValue() != null && me.getAutoLoadOnValue() && !store.isLoaded() && !store.hasPendingLoad()) {
-      store.load();
-    }
-  }
-  me.updatePickerStore();
-}, applyValueField:function(valueField) {
-  if (valueField == null) {
-    valueField = this.getDisplayField();
-  }
-  return valueField;
-}, updateValueField:function(valueField) {
-  var store = this.getStore();
-  if (store && !this.isConfiguring) {
-    store.byValue.setCollection(null);
-    store.setExtraKeys({byValue:{rootProperty:'data', unique:false, property:valueField}});
-  }
-}, applyDisplayField:function(displayField) {
-  if (displayField == null) {
-    displayField = this.getValueField();
-  }
-  return displayField;
-}, updateDisplayField:function(displayField) {
-  var store = this.getStore();
-  if (store && !this.isConfiguring) {
-    store.byText.setCollection(null);
-    store.setExtraKeys({byText:{rootProperty:'data', unique:false, property:displayField}});
-  }
-}, onStoreLoad:function(store, records, success) {
-  var me = this, filtering = me.isFiltering;
-  me.isFiltering = false;
-  if (success) {
-    me.syncMode = filtering ? 'filter' : 'store';
-    me.syncValue();
-  }
-}, syncValue:function() {
-  var me = this, store = me.getStore(), forceSelection = me.getForceSelection(), valueNotFoundText = me.getValueNotFoundText(), is, isCleared, isInput, value, matchedRecord;
-  if (me.reconcilingValue || !store || !store.isLoaded() || store.hasPendingLoad()) {
-    return;
-  }
-  me.reconcilingValue = true;
-  me.getSelection();
-  is = {};
-  is[me.syncMode] = true;
-  value = (isInput = is.input || is.filter) ? me.getInputValue() : me.getValue();
-  isCleared = value == null || value === '';
-  if (!isCleared) {
-    if (me.getMultiSelect()) {
-      if (me.getForceSelection() || me.getInputValue() === '') {
-        me.syncMultiValues(Ext.Array.from(value));
-      }
-      return;
-    }
-    matchedRecord = (isInput ? store.byText : store.byValue).get(value);
-    if (matchedRecord) {
-      if (!matchedRecord.isEntity) {
-        matchedRecord = matchedRecord[0];
-      }
-    } else if (!forceSelection) {
-      matchedRecord = me.findRecordByValue(value);
-    }
-  }
-  if (!isCleared && !matchedRecord && !forceSelection) {
-    matchedRecord = me.createEnteredRecord(value);
-  } else {
-    if (isInput || is.store) {
-      if (!matchedRecord && forceSelection) {
-        me.setValue(null);
-        me.setSelection(null);
-        if (!is.filter) {
-          me.setFieldDisplay();
-        }
-      }
-    } else {
-      if (isCleared || !matchedRecord) {
-        if (me.mustAutoSelect()) {
-          matchedRecord = store.first();
-          if (me.getAutoSelect() === 'initial') {
-            me.setAutoSelect(false);
-          }
-        } else {
-          if (me.getValue() !== null) {
-            me.setValue(null);
-          }
-          me.setSelection(null);
-        }
-      } else if (valueNotFoundText) {
-        me.setError(valueNotFoundText);
-      }
-    }
-  }
-  if (matchedRecord) {
-    me.setSelection(matchedRecord);
-  }
-  me.reconcilingValue = false;
-}, syncMultiValues:function(values) {
-  var me = this, matchedRecords = [], valueArray = [], forceSelection = me.getForceSelection(), valueField = me.getValueField(), valueCollection = me.getValueCollection(), val, record, len, i, key;
-  for (i = 0, len = values.length; i < len; i++) {
-    record = val = values[i];
-    if (!record || !record.isEntity) {
-      record = me.findRecordByValue(key = record);
-      if (!record) {
-        record = valueCollection.find(valueField, key);
-      }
-    }
-    if (!record) {
-      if (!forceSelection) {
-        if (!record && val) {
-          record = me.createEnteredRecord(val);
-        }
-      }
-    }
-    if (record) {
-      matchedRecords.push(record);
-      valueArray.push(record.get(valueField));
-    }
-  }
-  if (matchedRecords.length) {
-    me._value = valueArray;
-    me.setSelection(matchedRecords);
-  } else {
-    me._value = null;
-    me.setSelection();
-  }
-  me.reconcilingValue = false;
-}, onStoreDataChanged:function() {
-  var me = this, value;
-  if (me.getForceSelection()) {
-    value = me.getValue();
-    if (value != null) {
-      me.setValue(value);
-    }
-  }
-}, onStoreRecordUpdated:function(store, record) {
-  if (this.getValueCollection().contains(record)) {
-    this.updateSelection(this.getSelection());
-  }
-  if (!this.getMultiSelect()) {
-    this.setFieldDisplay();
-  }
-}, onStoreRefresh:function(store) {
-  var me = this, picker = me.getConfig('picker', false, true), valueCollection = me.getValueCollection(), selectionModelCollection, ignoredFilters, filterPickList, pickerNavModel, pickerLocation;
-  if (picker) {
-    selectionModelCollection = picker.getSelectable().getSelected();
-    pickerNavModel = picker.getNavigationModel();
-    pickerLocation = pickerNavModel.getLocation();
-    if (pickerLocation && !picker.getStore().contains(pickerLocation.record)) {
-      pickerNavModel.clearLocation();
-    }
-  }
-  if (selectionModelCollection !== valueCollection) {
-    ignoredFilters = [];
-    if (me.getPrimaryFilter) {
-      ignoredFilters.push(me.getPrimaryFilter());
-    }
-    filterPickList = me.getFilterPickList();
-    if (filterPickList) {
-      ignoredFilters.push(filterPickList);
-    }
-    Ext.dataview.selection.Model.refreshCollection(valueCollection, store.getData(), ignoredFilters, Ext.dataview.BoundList.prototype.beforeSelectionRefresh);
-  }
-  me.syncValue();
-  me.syncAutoSelect(store);
-}, syncAutoSelect:function(store) {
-  var me = this, record;
-  if ((me.getValue() === null || me.getValue() === '') && me.getAutoSelect()) {
-    if (!me.getQueryMode || me.getQueryMode() === 'local') {
-      record = store && store.getAt(0);
-      me.setValue(record);
-    } else if (!me.autoSelectCompleted) {
-      me.autoSelectCompleted = true;
-      if (!me.getRawValue()) {
-        record = store && store.getAt(0);
-        me.setValue(record);
-      }
-    }
-  }
-}, reset:function() {
-  var me = this, picker = me.getConfig('picker', false, true), record = me.originalValue || null, store;
-  if (me.getAutoSelect()) {
-    store = me.getStore();
-    record = record != null ? record : store && store.getAt(0);
-  } else {
-    if (picker) {
-      picker.deselectAll();
-    }
-  }
-  me.setValue(record);
-  return me;
-}, doDestroy:function() {
-  var me = this, store = me.getStore();
-  if (store && !store.destroyed && store.getAutoDestroy()) {
-    store.destroy();
-  }
-  me.destroyMembers('options', 'chipView');
-  me.callParent();
-}, privates:{syncMode:null, autoSelectCompleted:false, createChipView:function(chipView) {
-  var me = this, chipViewCfg = Ext.merge({ownerField:me, ownerCmp:me, store:{data:me.getValueCollection()}}, chipView);
-  if (!(chipViewCfg.displayField || chipViewCfg.displayTpl)) {
-    chipViewCfg.displayField = me.getDisplayField();
-  }
-  return chipViewCfg;
-}, createEnteredRecord:function(value) {
-  var me = this, recordCreator = me.getRecordCreator(), displayField = me.getDisplayField(), valueField = me.getValueField(), dataObj, result;
-  if (recordCreator) {
-    result = Ext.callback(recordCreator, me.getRecordCreatorScope(), [value, me.getStore().getModel(), me], 0, me);
-  } else {
-    dataObj = {};
-    dataObj[displayField] = value;
-    if (valueField && displayField !== valueField) {
-      dataObj[valueField] = value;
-    }
-    result = me.createSelectionRecord(dataObj);
-  }
-  if (result) {
-    result.isEntered = true;
-  }
-  return result;
-}, hasValue:function() {
-  return this.callParent() || this.getValueCollection().getCount();
-}, onChipCloseTap:function(chipView, location) {
-  var record = location.record;
-  chipView.getNavigationModel().clearLocation();
-  chipView.getSelectable().deselect(record);
-  this.getValueCollection().remove(record);
-  location.event.stopEvent();
-  return false;
-}, onChipBodyTouchStart:function(e) {
-  if (e.pointerType !== 'touch' && !this.containsFocus) {
-    this.inputElement.focus();
-    e.preventDefault();
-  }
-}, onChipBodyTap:function(e) {
-  if (e.pointerType === 'touch' && !this.containsFocus) {
-    this.inputElement.focus();
-    e.preventDefault();
-  }
-  if (!e.getTarget('.' + Ext.Chip.prototype.classCls)) {
-    this.onInputElementClick(e);
-  }
-}, mustAutoSelect:function() {
-  var me = this, autoSelect = me.getAutoSelect();
-  if (autoSelect && !(me.isConfiguring || autoSelect === 'initial')) {
-    autoSelect = !me.getClearable() && me.getRequired();
-  }
-  return !!autoSelect;
-}, applyFilterPickList:function(filterPickList, oldFilterPickerList) {
-  var me = this, pickerStore = me._pickerStore;
-  if (oldFilterPickerList && oldFilterPickerList.isFilter && pickerStore) {
-    pickerStore.removeFilter(oldFilterPickerList);
-  }
-  if (filterPickList) {
-    filterPickList = new Ext.util.Filter({scope:me, filterFn:me.filterPicked});
-  }
-  return filterPickList;
-}, updateFilterPickList:function(filterPickList, oldFilterPickList) {
-  var picker = this.getConfig('picker', false, true);
-  if (picker) {
-    if (filterPickList) {
-      picker.getSelectable().addIgnoredFilter(filterPickList);
-    } else if (oldFilterPickList) {
-      picker.getSelectable().removeIgnoredFilter(oldFilterPickList);
-    }
-  }
-  this.updatePickerStore();
-  if (picker) {
-    picker.setDisableSelection(filterPickList);
-  }
-}, filterPicked:function(record) {
-  return !this.getValueCollection().contains(record);
-}, updatePickerStore:function() {
-  var me = this, picker = me.getConfig('picker', false, true), store = me.getStore(), filterPickList = me.getFilterPickList() || undefined, localFiltering = me.getQueryMode && me.getQueryMode() === 'local' || filterPickList, result = store, filters;
-  if (localFiltering) {
-    filters = [];
-    if (me.getPrimaryFilter) {
-      filters.push(me.getPrimaryFilter());
-    }
-    if (filterPickList) {
-      filters.push(filterPickList);
-    }
-    if (me._pickerStore && me._pickerStore.isChainedStore) {
-      result = me._pickerStore.setConfig({source:store, filters:filters});
-    } else {
-      me._pickerStore = result = Ext.Factory.store({type:'chained', source:store, filters:filters});
-    }
-  } else {
-    me._pickerStore = result = store;
-  }
-  if (picker) {
-    picker.setStore(result);
-  }
-}, setFieldDisplay:function() {
-  var me = this, selection, inputValue = '', displayTpl;
-  if (!me.getMultiSelect()) {
-    selection = me.getValueCollection().first();
-    if (selection) {
-      displayTpl = me.getDisplayTpl();
-      if (displayTpl) {
-        inputValue = displayTpl.apply(me.getRecordDisplayData(selection));
-      } else {
-        inputValue = selection.get(me.getDisplayField());
-      }
-    }
-    me.setInputValue(inputValue);
-    me.syncEmptyState();
-  }
-}}, rawToValue:Ext.emptyFn});
-Ext.define('Ext.field.ComboBox', {extend:Ext.field.Select, xtype:['combobox', 'comboboxfield'], alternateClassName:['Ext.form.field.ComboBox'], config:{primaryFilter:true, queryParam:'query', queryMode:'remote', queryCaching:true, queryDelay:true, minChars:null, anyMatch:false, caseSensitive:false, typeAhead:false, typeAheadDelay:250, triggerAction:'all', allQuery:null, enableRegEx:null}, autoSelect:false, classCls:Ext.baseCSSPrefix + 'combobox', editable:true, forceSelection:false, lastQuery:{}, 
-keyMap:{scope:'this', ENTER:'onEnterKey'}, platformConfig:{phone:{editable:false}}, onCollectionAdd:function(valueCollection, adds) {
-  if (this.getMultiSelect()) {
-    this.inputElement.dom.value = '';
-    if (this.getQueryMode() === 'local' && this.expanded) {
-      this.doRawFilter();
-    }
-  }
-  this.callParent([valueCollection, adds]);
-}, onInput:function(e) {
-  var me = this, filterTask = me.doFilterTask, value = me.inputElement.dom.value, filters = me.getStore().getFilters(), keyboardEvent, isDelimiter;
-  if (Ext.supports.inputEventData) {
-    isDelimiter = e.browserEvent.data === me.getDelimiter();
-  } else {
-    keyboardEvent = me.lastKeyMapEvent;
-    isDelimiter = keyboardEvent && keyboardEvent.getChar() === me.getDelimiter() && Ext.ticks() - keyboardEvent.time < 20;
-  }
-  me._inputValue = value;
-  if (!me.hasFocus && me.getLabelAlign() === 'placeholder') {
-    me.syncLabelPlaceholder(true);
-  }
-  if (!me.getForceSelection() || value === '' && !me.getRequired()) {
-    if (me.getMultiSelect()) {
-      if (isDelimiter) {
-        return me.addNewMultiValues();
-      }
-    } else {
-      me.callParent([e]);
-    }
-  } else {
-    me.syncEmptyState();
-  }
-  if (value.length) {
-    if (!filterTask) {
-      filterTask = me.doFilterTask = new Ext.util.DelayedTask(me.doRawFilter, me);
-    }
-    filterTask.delay(me.getQueryDelay());
-  } else {
-    me.collapse();
-    filters.beginUpdate();
-    me.getPrimaryFilter().setDisabled(true);
-    filters.endUpdate();
-  }
-}, onEnterKey:function(e) {
-  var me = this;
-  if (!me.getForceSelection() && me.getMultiSelect()) {
-    me.addNewMultiValues();
-  }
-}, addNewMultiValues:function() {
-  var me = this, inputValue = me.inputElement.dom.value, newValue;
-  newValue = me.getValue() || [];
-  newValue.push.apply(newValue, inputValue.split(me.getDelimiter()));
-  return me.syncMultiValues(Ext.Array.clean(newValue));
-}, doRawFilter:function() {
-  var me = this, rawValue = me.inputElement.dom.value, lastQuery = me.lastQuery.query, isErase = lastQuery && lastQuery.length > rawValue.length;
-  me.doFilter({query:rawValue, isErase:isErase});
-}, onExpandTap:function() {
-  var me = this, triggerAction = me.getTriggerAction();
-  if (me.expanded) {
-    if (Ext.now() - me.expanded > 100) {
-      me.collapse();
-    }
-  } else if (!me.getReadOnly() && !me.getDisabled()) {
-    if (triggerAction === 'all') {
-      me.doFilter({query:me.getAllQuery(), force:true});
-    } else if (triggerAction === 'last') {
-      me.doFilter({query:me.lastQuery.query, force:true});
-    } else {
-      me.doFilter({query:me.inputElement.dom.value});
-    }
-  }
-}, clearValue:function() {
-  var me = this;
-  me.setValue(null);
-  me.setInputValue('');
-  me.setFieldDisplay();
-}, doFilter:function(query) {
-  var me = this, isLocal = me.getQueryMode() === 'local', lastQuery = me.lastQuery, store = me.getStore() && me._pickerStore, filter = me.getPrimaryFilter(), filters = store.getFilters(), queryPlan = me.beforeFilter(Ext.apply({filterGeneration:filter.generation, lastQuery:lastQuery || {}, combo:me, cancel:false}, query)), picker, source;
-  if (store && queryPlan !== false && !queryPlan.cancel) {
-    if (me.getEnableRegEx()) {
-      try {
-        queryPlan.query = new RegExp(queryPlan.query);
-      } catch (e) {
-        queryPlan.query = null;
-      }
-    }
-    filter.setValue(queryPlan.query);
-    if (!me.getQueryCaching() || filter.generation !== lastQuery.filterGeneration || query.force) {
-      if (Ext.isEmpty(queryPlan.query)) {
-        filter.setDisabled(true);
-      } else {
-        filter.setDisabled(false);
-        me.isFiltering = !isLocal;
-      }
-      me.lastQuery = queryPlan;
-      filters.beginUpdate();
-      filters.endUpdate();
-      if (store.isChainedStore) {
-        source = store.getSource();
-        if (!source.isLoaded() && !source.hasPendingLoad()) {
-          source.load();
-        }
-      }
-    }
-    if (me.getTypeAhead()) {
-      me.doTypeAhead(queryPlan);
-    }
-    picker = me.getPicker();
-    if (!isLocal || store.getCount() || picker.getEmptyText && picker.getEmptyText()) {
-      me.expand();
-      if (queryPlan.query && isLocal) {
-        me.setPickerLocation();
-      }
-      return true;
-    }
-    me.collapse();
-  }
-  return false;
-}, beforeFilter:function(queryPlan) {
-  var me = this, query = queryPlan.query, len;
-  if (me.fireEvent('beforequery', queryPlan) === false) {
-    queryPlan.cancel = true;
-  } else if (!queryPlan.cancel) {
-    len = query && query.length;
-    if (!queryPlan.force && len && len < me._getMinChars()) {
-      queryPlan.cancel = true;
-    }
-  }
-  return queryPlan;
-}, completeEdit:function() {
-  var me = this, inputValue = me.getInputValue(), value = me.getValue(), selection = Ext.Array.from(me.getSelection()), valueField, displayField, displayValueField, numSelectedElements = selection.length, firstSelectedElement;
-  if (numSelectedElements) {
-    firstSelectedElement = selection[0];
-    if (me.getDisplayTpl()) {
-      valueField = firstSelectedElement.get(this.getValueField());
-      displayField = firstSelectedElement.get(this.getDisplayField());
-      displayValueField = me.getDisplayTpl().apply({abbr:valueField, name:displayField});
-    } else {
-      displayValueField = firstSelectedElement.get(this.getDisplayField());
-    }
-  } else {
-    displayValueField = null;
-  }
-  if (me.doFilterTask) {
-    me.doFilterTask.cancel();
-  }
-  if (!me.getForceSelection() && me.getMultiSelect()) {
-    if (inputValue) {
-      if (this.getSelectOnTab()) {
-        me.addNewMultiValues();
-      } else {
-        this.setInputValue('');
-      }
-    }
-  } else {
-    if (inputValue) {
-      if (!numSelectedElements || displayValueField !== inputValue) {
-        me.syncMode = 'input';
-        me.syncValue();
-        if (!me.getValue()) {
-          me.setValue(value);
-        }
-      }
-    } else if (numSelectedElements) {
-      if (me.getRequired()) {
-        me.setFieldDisplay(selection);
-      } else if (!me.getMultiSelect()) {
-        me.setSelection(null);
-      }
-    }
-    if (me.getTypeAhead()) {
-      me.select(inputValue ? inputValue.length : 0);
-    }
-  }
-  if (me.getForceSelection() && me.getMultiSelect()) {
-    me.setInputValue('');
-  }
-}, onStoreFilterChange:function() {
-  var me = this, store = me.getStore(), selection = me.getSelection() || null, toRemove = [];
-  if (selection && !me.destroying && store && store.isLoaded() && me.getPrimaryFilter().getDisabled()) {
-    if (me.getMultiSelect()) {
-      Ext.Array.each(selection, function(record) {
-        if (!record.isEntered && !store.contains(record)) {
-          toRemove.push(record);
-        }
-      });
-    } else if (!selection.isEntered && !store.contains(selection)) {
-      toRemove.push(selection);
-    }
-    if (toRemove.length) {
-      this.getValueCollection().remove(toRemove);
-    }
-  }
-}, onListSelect:Ext.emptyFn, applyQueryDelay:function(queryDelay) {
-  if (queryDelay === true) {
-    queryDelay = this.getQueryMode() === 'local' ? 10 : 500;
-  }
-  return queryDelay;
-}, applyPrimaryFilter:function(filter, oldFilter) {
-  var me = this, store = me.getStore() && me._pickerStore, isInstance = filter && filter.isFilter, methodName;
-  if (store && oldFilter) {
-    if (filter) {
-      if (isInstance) {
-        store.removeFilter(oldFilter, true);
-      } else {
-        oldFilter.setConfig(filter);
-        return;
-      }
-    } else if (!store.destroyed) {
-      store.getFilters().remove(oldFilter);
-    }
-  }
-  if (filter) {
-    if (filter === true) {
-      filter = {id:me.id + '-primary-filter', anyMatch:me.getAnyMatch(), caseSensitive:me.getCaseSensitive(), root:'data', property:me.getDisplayField(), value:me.inputElement.dom.value, disabled:true};
-    }
-    if (typeof filter === 'string') {
-      methodName = filter;
-      filter = {filterFn:function(rec) {
-        var methodOwner = me.resolveListenerScope(me);
-        return methodOwner[methodName].call(this, rec);
-      }};
-    }
-    if (!filter.isFilter) {
-      filter = new Ext.util.Filter(filter);
-    }
-    filter.serialize = function() {
-      return me.serializePrimaryFilter(this);
-    };
-    if (store) {
-      store.addFilter(filter, true);
-    }
-  }
-  return filter;
-}, updateOptions:function(options, oldOptions) {
-  if (options) {
-    this.setQueryMode('local');
-  }
-  this.callParent([options, oldOptions]);
-}, updatePicker:function(picker, oldPicker) {
-  if (picker) {
-    picker.getSelectable().addIgnoredFilter(this.getPrimaryFilter());
-  }
-  this.callParent([picker, oldPicker]);
-}, updateStore:function(store, oldStore) {
-  var me = this, isRemote = me.getQueryMode() === 'remote', primaryFilter, proxy, oldFilters;
-  me.autoSelectCompleted = false;
-  if (isRemote) {
-    store.setRemoteFilter(true);
-    proxy = store.getProxy();
-    if (proxy.setFilterParam) {
-      proxy.setFilterParam(me.getQueryParam());
-    }
-    if (!Ext.isDefined(store.getAutoLoadOnFilterEnd())) {
-      store.setAutoLoadOnFilterEnd(true);
-    }
-  }
-  me.callParent([store, oldStore]);
-  primaryFilter = me.getPrimaryFilter();
-  if (primaryFilter) {
-    if (oldStore && !oldStore.destroyed) {
-      oldFilters = oldStore.getFilters();
-      if (oldFilters) {
-        oldFilters.remove(primaryFilter);
-      }
-    }
-    me._pickerStore.addFilter(primaryFilter, true);
-  }
-  if (me.getQueryMode() === 'local') {
-    store.on({filterchange:'onStoreFilterChange', scope:me});
-  }
-}, serializePrimaryFilter:function(filter) {
-  return filter.getValue();
-}, doDestroy:function() {
-  var me = this;
-  me.setPrimaryFilter(null);
-  if (me.typeAheadTask) {
-    me.typeAheadTask = me.typeAheadTask.cancel();
-  }
-  me.callParent();
-}, doTypeAhead:function(queryPlan) {
-  var me = this;
-  if (!me.typeAheadTask) {
-    me.typeAheadTask = new Ext.util.DelayedTask(me.onTypeAhead, me);
-  }
-  if (!queryPlan.lastQuery.query || !queryPlan.query || queryPlan.query.length > queryPlan.lastQuery.query.length || !Ext.String.startsWith(queryPlan.lastQuery.query, queryPlan.query)) {
-    me.typeAheadTask.delay(me.getTypeAheadDelay());
-  }
-}, onTypeAhead:function() {
-  var me = this, displayField = me.getDisplayField(), inputEl = me.inputElement.dom, rawValue = inputEl.value, store = me.getStore(), record = store.findRecord(displayField, rawValue), newValue, len, selStart;
-  if (record) {
-    newValue = record.get(displayField);
-    len = newValue.length;
-    selStart = rawValue.length;
-    if (selStart !== 0 && selStart !== len) {
-      inputEl.value = me._inputValue = newValue;
-      me.select(selStart, len);
-    }
-  }
-}, privates:{_getMinChars:function() {
-  var result = this.getMinChars();
-  if (result == null) {
-    result = this.getQueryMode() === 'remote' ? 4 : 0;
-  }
-  return result;
-}, setFieldDisplay:function(selection) {
-  var me = this, inputValue;
-  me.callParent([selection]);
-  if (!me.getMultiSelect()) {
-    if (me.getTypeAhead()) {
-      inputValue = me.getInputValue();
-      me.select(inputValue ? inputValue.length : 0);
-    }
-  }
-}}});
+Ext.define('FormsRenderer.view.form.component.Mixin', {extend:Ext.Mixin, isFormsComponent:true});
 Ext.define('Ext.field.trigger.Date', {extend:Ext.field.trigger.Expand, xtype:'datetrigger', alias:'trigger.date', classCls:Ext.baseCSSPrefix + 'datetrigger'});
 Ext.define('Ext.picker.Date', {extend:Ext.picker.Picker, xtype:'datepicker', alternateClassName:'Ext.DatePicker', config:{yearFrom:1980, yearTo:(new Date()).getFullYear(), monthText:'Month', dayText:'Day', yearText:'Year', slotOrder:['month', 'day', 'year'], doneButton:true}, initialize:function() {
   var me = this;
@@ -69715,7 +68556,6 @@ window.addEventListener('message', event => {
     }
   }
 }, false);
-Ext.define('FormsRenderer.view.form.component.Mixin', {extend:Ext.Mixin, isFormsComponent:true});
 Ext.define('FormsRenderer.view.form.component.TextField', {extend:Ext.field.Text, alias:'widget.formsTextField', mixins:[FormsRenderer.view.form.component.Mixin]});
 Ext.define('FormsRenderer.view.form.component.Checkbox', {extend:Ext.field.Checkbox, alias:'widget.formsCheckbox', mixins:[FormsRenderer.view.form.component.Mixin], formConfig:undefined, formComponentConfig:undefined, publishes:{value:true}, setValue:function(value) {
   const me = this;
@@ -69941,7 +68781,6 @@ Ext.define('FormsRenderer.view.form.component.CheckboxGroup', {extend:Ext.field.
     innerItem.setRequired(value);
   });
 }});
-Ext.define('FormsRenderer.view.form.component.ComboBox', {extend:Ext.field.ComboBox, alias:'widget.formsComboBox', mixins:[FormsRenderer.view.form.component.Mixin], formConfig:undefined, formComponentConfig:undefined, publishes:{value:true}, displayField:'label', valueField:'value', forceSelection:true});
 Ext.define('FormsRenderer.view.form.component.Image', {extend:Ext.Img, alias:'widget.formsImage', mixins:[FormsRenderer.view.form.component.Mixin], constructor:function(config) {
   const me = this;
   if (config.formComponentConfig) {
@@ -70026,8 +68865,8 @@ Ext.define('FormsRenderer.view.form.component.FileField', {extend:Ext.field.File
 }});
 Ext.define('FormsRenderer.ConfigParser', {singleton:true, fallBackLanguage:'de', componentTypeMap:{TEXTFIELD:{xtype:'formsTextField', bind:['value', 'hidden', 'required', 'disabled', 'readOnly']}, CHECKBOX:{xtype:'formsCheckbox', bind:['value', 'hidden', 'required', 'disabled']}, BUTTON:{xtype:'formsButton', bind:['hidden', 'disabled', 'target', 'value'], remap:{'label':'text'}}, CONTAINER:{xtype:'formsContainer', bind:['hidden', 'required', 'disabled', 'readOnly'], remap:{'label':'title'}}, FIELDSET:{xtype:'formsFieldSet', 
 bind:['hidden', 'required', 'disabled', 'readOnly'], remap:{'label':'title'}}, HTML:{xtype:'formsHtml', bind:['value', 'hidden']}, DATEFIELD:{xtype:'formsDateField', bind:['value', 'hidden', 'required', 'disabled', 'readOnly']}, NUMBERFIELD:{xtype:'formsNumberField', bind:['value', 'hidden', 'required', 'disabled', 'readOnly']}, TEXTAREA:{xtype:'formsTextArea', bind:['value', 'hidden', 'required', 'disabled', 'readOnly']}, RADIO:{xtype:'formsRadio', bind:['value', 'hidden', 'disabled']}, RADIOGROUP:{xtype:'formsRadioGroup', 
-formComponentConfigDefaults:{type:'radio'}, bind:['vertical', 'value', 'hidden', 'required', 'disabled']}, CHECKBOXGROUP:{xtype:'formsCheckboxGroup', formComponentConfigDefaults:{type:'checkbox'}, bind:['value', 'hidden', 'required', 'disabled']}, COMBOBOX:{xtype:'formsComboBox', bind:['value', 'hidden', 'required', 'disabled', 'options', 'readOnly']}, IMAGE:{xtype:'formsImage', bind:['hidden']}, TABLE:{xtype:'formsTable', bind:['data', 'disabled', 'hidden'], remap:{'label':'title'}}, FILEFIELD:{xtype:'formsFileField', 
-bind:['fileContent', 'hidden', 'required', 'disabled', 'value']}}, initAsync:function(formConfig) {
+formComponentConfigDefaults:{type:'radio'}, bind:['vertical', 'value', 'hidden', 'required', 'disabled']}, CHECKBOXGROUP:{xtype:'formsCheckboxGroup', formComponentConfigDefaults:{type:'checkbox'}, bind:['value', 'hidden', 'required', 'disabled']}, COMBOBOX:{xtype:'formsComboBox', bind:['value', 'hidden', 'required', 'disabled', 'options', 'readOnly'], remap:{'options':'store'}}, IMAGE:{xtype:'formsImage', bind:['hidden']}, TABLE:{xtype:'formsTable', bind:['data', 'disabled', 'hidden'], remap:{'label':'title'}}, 
+FILEFIELD:{xtype:'formsFileField', bind:['fileContent', 'hidden', 'required', 'disabled', 'value']}}, initAsync:function(formConfig) {
   const me = FormsRenderer.ConfigParser, language = formConfig.state.language, deferred = new Ext.Deferred();
   if (formConfig.metaData && formConfig.metaData.name) {
     document.title = formConfig.metaData.name;
@@ -70192,9 +69031,13 @@ Ext.define('FormsRenderer.view.form.Renderer', {extend:Ext.Panel, alias:'widget.
 }}}, listeners:{painted:function() {
   window.formsRendererReady = true;
 }}});
-Ext.define('FormsRenderer.view.form.RendererController', {extend:Ext.app.ViewController, alias:'controller.formsRendererController', schemaValidator:undefined, initialFormConfig:undefined, control:{'field':{change:'onDataChange', blur:'onBlur'}, '[action\x3dreset]':{tap:'resetForm'}, '[action\x3dvalidate]':{tap:'validateData'}, '[action\x3dsubmit]':{tap:'submitData'}, '[action\x3dprint]':{tap:'printForm'}, '[action\x3dsetProperty]':{tap:'setTargetPropertyToValue'}}, init:function(view) {
+Ext.define('FormsRenderer.view.form.RendererController', {extend:Ext.app.ViewController, alias:'controller.formsRendererController', schemaValidator:undefined, initialFormConfig:undefined, control:{'field':{change:'onDataChange', blur:'onBlur'}, '[action\x3dreset]':{tap:'resetForm'}, '[action\x3dvalidate]':{tap:'validateData'}, '[action\x3dsubmit]':{tap:'submitData'}, '[action\x3dprint]':{tap:'printForm'}, '[action\x3dsetProperty]':{tap:'setTargetPropertyToValue'}}, init:async function(view) {
   const me = this;
-  me.initComponents();
+  me.readyPromise = new Ext.Deferred();
+  await me.initComponents();
+  me.readyPromise.resolve();
+}, getReadyPromise:function() {
+  return this.readyPromise;
 }, initViewModel:function(vm) {
   const me = this, view = me.getView();
   vm.setData(view.config.formConfig.state);
@@ -70206,27 +69049,31 @@ Ext.define('FormsRenderer.view.form.RendererController', {extend:Ext.app.ViewCon
   const language = FormsRenderer.ConfigParser.getLocalization(formConfig);
   formConfig.state.language = language;
   FormsRenderer.ConfigParser.translateObject(language, formConfig);
-}, initComponents:function() {
+}, initComponents:async function() {
   const me = this, view = me.getView(), formConfig = view.config.formConfig;
   view.removeAll();
   me.initStyling(formConfig);
   me.initLanguage();
-  FormsRenderer.ConfigParser.initAsync(formConfig).then(() => {
-    let formItems = FormsRenderer.ConfigParser.getComponents(formConfig);
-    if (formItems.length === 0) {
-      formItems = [{xtype:'formsError', message:'\x3cb\x3eForms Renderer - No Items\x3c/b\x3e'}];
-    }
+  await FormsRenderer.ConfigParser.initAsync(formConfig);
+  let formItems = FormsRenderer.ConfigParser.getComponents(formConfig);
+  if (formItems.length === 0) {
+    formItems = [{xtype:'formsError', message:'\x3cb\x3eForms Renderer - No Items\x3c/b\x3e'}];
+  }
+  try {
     view.add(formItems);
-    if (formConfig.dataSchema) {
-      try {
-        me.schemaValidator = ajv.compile(formConfig.dataSchema);
-      } catch (e) {
-        view.removeAll();
-        view.setItems({xtype:'formsError', message:`invalid dataSchema in forms config<br>${e.message}`});
-      }
+  } catch (e) {
+    Ext.log({msg:'ERROR: Adding form items incomplete. Bind-Strings may be wrong.', dump:e, stack:true, level:'error'});
+    console.warn(formItems);
+  }
+  if (formConfig.dataSchema) {
+    try {
+      me.schemaValidator = ajv.compile(formConfig.dataSchema);
+    } catch (e) {
+      view.removeAll();
+      view.setItems({xtype:'formsError', message:`invalid dataSchema in forms config<br>${e.message}`});
     }
-    me.resetForm();
-  });
+  }
+  await me.resetForm();
 }, initStyling:function(formConfig) {
   const configuration = formConfig.configuration;
   if (configuration) {
@@ -70263,7 +69110,7 @@ Ext.define('FormsRenderer.view.form.RendererController', {extend:Ext.app.ViewCon
       }
     }
   }
-}, validateData:function(source, onlyValidateSource) {
+}, validateData:async function(source, onlyValidateSource) {
   const me = this, view = me.getView(), vm = me.getViewModel(), deferred = new Ext.Deferred();
   if (onlyValidateSource !== true) {
     onlyValidateSource = false;
@@ -70285,7 +69132,7 @@ Ext.define('FormsRenderer.view.form.RendererController', {extend:Ext.app.ViewCon
     deferred.resolve(vm.get('validationErrors'));
   }
   return deferred.promise;
-}, resetForm:function() {
+}, resetForm:async function() {
   const me = this, view = me.getView(), vm = me.getViewModel();
   const initState = Ext.clone(me.initialFormConfig.state);
   const language = vm.get('language');
@@ -70295,7 +69142,7 @@ Ext.define('FormsRenderer.view.form.RendererController', {extend:Ext.app.ViewCon
   vm.setData(view.config.formConfig.state);
   vm.notify();
   const allComponents = view.query('[isFormsComponent]');
-  me.validateData(allComponents);
+  await me.validateData(allComponents);
   allComponents.forEach(component => {
     if (component.setError) {
       component.setError(null);
@@ -70603,8 +69450,8 @@ Ext.define('FormsRenderer.view.main.MainController', {extend:Ext.app.ViewControl
   } else {
     me.setContent({xtype:'formsRenderer', formConfig:formConfig});
   }
-}, onMessage:function(dataJson, event) {
-  const me = this, renderer = me.getView().down('formsRenderer');
+}, onMessage:async function(dataJson, event) {
+  const me = this;
   if (!dataJson || !dataJson.requestName || !dataJson.requestName) {
     return;
   }
@@ -70612,21 +69459,28 @@ Ext.define('FormsRenderer.view.main.MainController', {extend:Ext.app.ViewControl
     const formConfig = dataJson.request;
     me.createForm(formConfig);
     me.sendMessageResponse(dataJson, event, {});
-  } else if (dataJson.requestName === 'getFormConfig' && renderer) {
-    me.sendMessageResponse(dataJson, event, renderer.getFormConfig());
-  } else if (dataJson.requestName === 'setData' && renderer) {
-    renderer.getViewModel().set('data', Ext.apply(renderer.getViewModel().get('data'), dataJson.request));
-    me.sendMessageResponse(dataJson, event, renderer.getViewModel().get('data'));
-  } else if (dataJson.requestName === 'validateData' && renderer) {
-    renderer.getController().validateData().then(me.sendMessageResponse.bind(me, dataJson, event), me.sendMessageResponse.bind(me, dataJson, event));
-  } else if (dataJson.requestName === 'submitData' && renderer) {
-    renderer.getController().submitData(dataJson.request).then(me.sendMessageResponse.bind(me, dataJson, event), me.sendMessageResponse.bind(me, dataJson, event));
-  } else if (dataJson.requestName === 'resetForm' && renderer) {
-    renderer.getController().resetForm();
-    me.sendMessageResponse(dataJson, event, {});
-  } else if (dataJson.requestName === 'printForm' && renderer) {
-    renderer.getController().printForm();
-    me.sendMessageResponse(dataJson, event, {});
+  } else {
+    const renderer = me.getView().down('formsRenderer');
+    if (renderer) {
+      const readyPromise = renderer.getController().getReadyPromise();
+      await readyPromise;
+      if (dataJson.requestName === 'getFormConfig') {
+        me.sendMessageResponse(dataJson, event, renderer.getFormConfig());
+      } else if (dataJson.requestName === 'setData') {
+        renderer.getViewModel().set('data', Ext.apply(renderer.getViewModel().get('data'), dataJson.request));
+        me.sendMessageResponse(dataJson, event, renderer.getViewModel().get('data'));
+      } else if (dataJson.requestName === 'validateData') {
+        renderer.getController().validateData().then(me.sendMessageResponse.bind(me, dataJson, event), me.sendMessageResponse.bind(me, dataJson, event));
+      } else if (dataJson.requestName === 'submitData') {
+        renderer.getController().submitData(dataJson.request).then(me.sendMessageResponse.bind(me, dataJson, event), me.sendMessageResponse.bind(me, dataJson, event));
+      } else if (dataJson.requestName === 'resetForm') {
+        renderer.getController().resetForm();
+        me.sendMessageResponse(dataJson, event, {});
+      } else if (dataJson.requestName === 'printForm') {
+        renderer.getController().printForm();
+        me.sendMessageResponse(dataJson, event, {});
+      }
+    }
   }
 }, sendMessageResponse:function(sourceEventData, sourceEvent, response) {
   const me = this;

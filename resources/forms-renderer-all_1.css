@@ -3114,12 +3114,6 @@ div.x-trigger.x-grouped {
 .x-dataview.x-nowrap .x-body-el {
     white-space: nowrap !important;
 }
-/* /mnt/HC_Volume_16111670/jenkins/jobs/bpc/jobs/bpc-forms-renderer/branches/support-4-1-x.ofduv3/workspace/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-base/sass/src/dataview/ChipView.scss:2 */
-.x-chipview .x-chipview-body-el {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: start;
-}
 /* /mnt/HC_Volume_16111670/jenkins/jobs/bpc/jobs/bpc-forms-renderer/branches/support-4-1-x.ofduv3/workspace/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-base/sass/src/dataview/IndexBar.scss:1 */
 .x-indexbar {
     pointer-events: none;
@@ -3341,23 +3335,6 @@ div.x-trigger.x-grouped {
 /* /mnt/HC_Volume_16111670/jenkins/jobs/bpc/jobs/bpc-forms-renderer/branches/support-4-1-x.ofduv3/workspace/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-base/sass/src/picker/Picker.scss:91 */
 .x-picker-left {
     text-align: left;
-}
-/* /mnt/HC_Volume_16111670/jenkins/jobs/bpc/jobs/bpc-forms-renderer/branches/support-4-1-x.ofduv3/workspace/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-base/sass/src/field/Select.scss:2 */
-.x-selectfield .x-chipview {
-    flex: 1 1 auto;
-}
-/* /mnt/HC_Volume_16111670/jenkins/jobs/bpc/jobs/bpc-forms-renderer/branches/support-4-1-x.ofduv3/workspace/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-base/sass/src/field/Select.scss:7 */
-.x-selectfield.x-multiselect:not(.x-combobox) input.x-input-el {
-    order: 999999;
-    padding: 0;
-    pointer-events: none;
-}
-/* /mnt/HC_Volume_16111670/jenkins/jobs/bpc/jobs/bpc-forms-renderer/branches/support-4-1-x.ofduv3/workspace/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-base/sass/src/field/ComboBox.scss:1 */
-.x-combobox .x-chipview input.x-input-el {
-    min-width: 80px;
-    flex: 1 1 auto;
-    order: 999999;
-    padding-left: 2px;
 }
 /* /mnt/HC_Volume_16111670/jenkins/jobs/bpc/jobs/bpc-forms-renderer/branches/support-4-1-x.ofduv3/workspace/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-base/sass/src/layout/Carousel.scss:1 */
 .x-layout-carousel-wrap {
@@ -16966,4 +16943,20 @@ readers do not read off random characters that represent icons */
 /* /mnt/HC_Volume_16111670/jenkins/jobs/bpc/jobs/bpc-forms-renderer/branches/support-4-1-x.ofduv3/workspace/node_modules/@virtimo/sencha-extjs-sdk/ext/packages/font-awesome/sass/etc/duotone.scss:862 */
 .fad.fa-hand-holding-usd:after {
     content: 10f4c0;
+}
+/* /mnt/HC_Volume_16111670/jenkins/jobs/bpc/jobs/bpc-forms-renderer/branches/support-4-1-x.ofduv3/workspace/node_modules/@virtimo/sencha-extjs-sdk/ext/packages/font-awesome/sass/etc/duotone.scss:863 */
+.fad.fa-hand-holding-water:after {
+    content: 10f4c1;
+}
+/* /mnt/HC_Volume_16111670/jenkins/jobs/bpc/jobs/bpc-forms-renderer/branches/support-4-1-x.ofduv3/workspace/node_modules/@virtimo/sencha-extjs-sdk/ext/packages/font-awesome/sass/etc/duotone.scss:864 */
+.fad.fa-hand-lizard:after {
+    content: 10f258;
+}
+/* /mnt/HC_Volume_16111670/jenkins/jobs/bpc/jobs/bpc-forms-renderer/branches/support-4-1-x.ofduv3/workspace/node_modules/@virtimo/sencha-extjs-sdk/ext/packages/font-awesome/sass/etc/duotone.scss:865 */
+.fad.fa-hand-middle-finger:after {
+    content: 10f806;
+}
+/* /mnt/HC_Volume_16111670/jenkins/jobs/bpc/jobs/bpc-forms-renderer/branches/support-4-1-x.ofduv3/workspace/node_modules/@virtimo/sencha-extjs-sdk/ext/packages/font-awesome/sass/etc/duotone.scss:866 */
+.fad.fa-hand-paper:after {
+    content: 10f256;
 }
