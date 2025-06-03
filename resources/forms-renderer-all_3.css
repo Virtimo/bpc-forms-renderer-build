@@ -1,4 +1,148 @@
 /* /mnt/HC_Volume_16111670/jenkins/jobs/bpc/jobs/bpc-forms-renderer/branches/support-4-2-x.07bg73/workspace/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-switch-video::before {
+    content: 'switch_video';
+}
+/* /mnt/HC_Volume_16111670/jenkins/jobs/bpc/jobs/bpc-forms-renderer/branches/support-4-2-x.07bg73/workspace/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-tag-faces::before {
+    content: 'tag_faces';
+}
+/* /mnt/HC_Volume_16111670/jenkins/jobs/bpc/jobs/bpc-forms-renderer/branches/support-4-2-x.07bg73/workspace/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-texture::before {
+    content: 'texture';
+}
+/* /mnt/HC_Volume_16111670/jenkins/jobs/bpc/jobs/bpc-forms-renderer/branches/support-4-2-x.07bg73/workspace/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-timelapse::before {
+    content: 'timelapse';
+}
+/* /mnt/HC_Volume_16111670/jenkins/jobs/bpc/jobs/bpc-forms-renderer/branches/support-4-2-x.07bg73/workspace/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-timer::before {
+    content: 'timer';
+}
+/* /mnt/HC_Volume_16111670/jenkins/jobs/bpc/jobs/bpc-forms-renderer/branches/support-4-2-x.07bg73/workspace/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-timer-10::before {
+    content: 'timer_10';
+}
+/* /mnt/HC_Volume_16111670/jenkins/jobs/bpc/jobs/bpc-forms-renderer/branches/support-4-2-x.07bg73/workspace/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-timer-3::before {
+    content: 'timer_3';
+}
+/* /mnt/HC_Volume_16111670/jenkins/jobs/bpc/jobs/bpc-forms-renderer/branches/support-4-2-x.07bg73/workspace/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-timer-off::before {
+    content: 'timer_off';
+}
+/* /mnt/HC_Volume_16111670/jenkins/jobs/bpc/jobs/bpc-forms-renderer/branches/support-4-2-x.07bg73/workspace/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-tonality::before {
+    content: 'tonality';
+}
+/* /mnt/HC_Volume_16111670/jenkins/jobs/bpc/jobs/bpc-forms-renderer/branches/support-4-2-x.07bg73/workspace/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-transform::before {
+    content: 'transform';
+}
+/* /mnt/HC_Volume_16111670/jenkins/jobs/bpc/jobs/bpc-forms-renderer/branches/support-4-2-x.07bg73/workspace/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-tune::before {
+    content: 'tune';
+}
+/* /mnt/HC_Volume_16111670/jenkins/jobs/bpc/jobs/bpc-forms-renderer/branches/support-4-2-x.07bg73/workspace/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-view-comfy::before {
+    content: 'view_comfy';
+}
+/* /mnt/HC_Volume_16111670/jenkins/jobs/bpc/jobs/bpc-forms-renderer/branches/support-4-2-x.07bg73/workspace/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-view-compact::before {
+    content: 'view_compact';
+}
+/* /mnt/HC_Volume_16111670/jenkins/jobs/bpc/jobs/bpc-forms-renderer/branches/support-4-2-x.07bg73/workspace/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-vignette::before {
+    content: 'vignette';
+}
+/* /mnt/HC_Volume_16111670/jenkins/jobs/bpc/jobs/bpc-forms-renderer/branches/support-4-2-x.07bg73/workspace/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-wb-auto::before {
+    content: 'wb_auto';
+}
+/* /mnt/HC_Volume_16111670/jenkins/jobs/bpc/jobs/bpc-forms-renderer/branches/support-4-2-x.07bg73/workspace/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-wb-cloudy::before {
+    content: 'wb_cloudy';
+}
+/* /mnt/HC_Volume_16111670/jenkins/jobs/bpc/jobs/bpc-forms-renderer/branches/support-4-2-x.07bg73/workspace/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-wb-incandescent::before {
+    content: 'wb_incandescent';
+}
+/* /mnt/HC_Volume_16111670/jenkins/jobs/bpc/jobs/bpc-forms-renderer/branches/support-4-2-x.07bg73/workspace/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-wb-iridescent::before {
+    content: 'wb_iridescent';
+}
+/* /mnt/HC_Volume_16111670/jenkins/jobs/bpc/jobs/bpc-forms-renderer/branches/support-4-2-x.07bg73/workspace/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-wb-sunny::before {
+    content: 'wb_sunny';
+}
+/* /mnt/HC_Volume_16111670/jenkins/jobs/bpc/jobs/bpc-forms-renderer/branches/support-4-2-x.07bg73/workspace/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-add-location::before {
+    content: 'add_location';
+}
+/* /mnt/HC_Volume_16111670/jenkins/jobs/bpc/jobs/bpc-forms-renderer/branches/support-4-2-x.07bg73/workspace/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-beenhere::before {
+    content: 'beenhere';
+}
+/* /mnt/HC_Volume_16111670/jenkins/jobs/bpc/jobs/bpc-forms-renderer/branches/support-4-2-x.07bg73/workspace/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-directions::before {
+    content: 'directions';
+}
+/* /mnt/HC_Volume_16111670/jenkins/jobs/bpc/jobs/bpc-forms-renderer/branches/support-4-2-x.07bg73/workspace/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-directions-bike::before {
+    content: 'directions_bike';
+}
+/* /mnt/HC_Volume_16111670/jenkins/jobs/bpc/jobs/bpc-forms-renderer/branches/support-4-2-x.07bg73/workspace/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-directions-boat::before {
+    content: 'directions_boat';
+}
+/* /mnt/HC_Volume_16111670/jenkins/jobs/bpc/jobs/bpc-forms-renderer/branches/support-4-2-x.07bg73/workspace/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-directions-bus::before {
+    content: 'directions_bus';
+}
+/* /mnt/HC_Volume_16111670/jenkins/jobs/bpc/jobs/bpc-forms-renderer/branches/support-4-2-x.07bg73/workspace/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-directions-car::before {
+    content: 'directions_car';
+}
+/* /mnt/HC_Volume_16111670/jenkins/jobs/bpc/jobs/bpc-forms-renderer/branches/support-4-2-x.07bg73/workspace/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-directions-railway::before {
+    content: 'directions_railway';
+}
+/* /mnt/HC_Volume_16111670/jenkins/jobs/bpc/jobs/bpc-forms-renderer/branches/support-4-2-x.07bg73/workspace/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-directions-run::before {
+    content: 'directions_run';
+}
+/* /mnt/HC_Volume_16111670/jenkins/jobs/bpc/jobs/bpc-forms-renderer/branches/support-4-2-x.07bg73/workspace/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-directions-subway::before {
+    content: 'directions_subway';
+}
+/* /mnt/HC_Volume_16111670/jenkins/jobs/bpc/jobs/bpc-forms-renderer/branches/support-4-2-x.07bg73/workspace/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-directions-transit::before {
+    content: 'directions_transit';
+}
+/* /mnt/HC_Volume_16111670/jenkins/jobs/bpc/jobs/bpc-forms-renderer/branches/support-4-2-x.07bg73/workspace/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-directions-walk::before {
+    content: 'directions_walk';
+}
+/* /mnt/HC_Volume_16111670/jenkins/jobs/bpc/jobs/bpc-forms-renderer/branches/support-4-2-x.07bg73/workspace/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-edit-location::before {
+    content: 'edit_location';
+}
+/* /mnt/HC_Volume_16111670/jenkins/jobs/bpc/jobs/bpc-forms-renderer/branches/support-4-2-x.07bg73/workspace/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-ev-station::before {
+    content: 'ev_station';
+}
+/* /mnt/HC_Volume_16111670/jenkins/jobs/bpc/jobs/bpc-forms-renderer/branches/support-4-2-x.07bg73/workspace/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-flight::before {
+    content: 'flight';
+}
+/* /mnt/HC_Volume_16111670/jenkins/jobs/bpc/jobs/bpc-forms-renderer/branches/support-4-2-x.07bg73/workspace/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-hotel::before {
+    content: 'hotel';
+}
+/* /mnt/HC_Volume_16111670/jenkins/jobs/bpc/jobs/bpc-forms-renderer/branches/support-4-2-x.07bg73/workspace/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
+.md-icon-layers::before {
+    content: 'layers';
+}
+/* /mnt/HC_Volume_16111670/jenkins/jobs/bpc/jobs/bpc-forms-renderer/branches/support-4-2-x.07bg73/workspace/node_modules/@virtimo/sencha-extjs-sdk/ext/modern/theme-material/sass/etc/mixins/icons.scss:8 */
 .md-icon-layers-clear::before {
     content: 'layers_clear';
 }
