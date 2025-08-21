@@ -69615,6 +69615,8 @@ Ext.define(null, {override:'Ext.Component', initialize:function() {
     }
   });
   me.callParent(arguments);
+}, setHtml:function(html) {
+  this.callParent([DOMPurify.sanitize(html)]);
 }});
 Ext.define(null, {override:'Ext.field.Field', config:{errorTarget:'under', labelWidth:'auto'}, constructor:function(config) {
   const me = this;
@@ -69887,17 +69889,7 @@ Ext.define('FormsRenderer.view.form.component.FieldSet', {extend:Ext.form.FieldS
     }
   });
 }});
-Ext.define('FormsRenderer.view.form.component.Html', {extend:Ext.Component, alias:'widget.formsHtml', mixins:[FormsRenderer.view.form.component.Mixin], formConfig:undefined, formComponentConfig:undefined, padding:10, constructor:function(config) {
-  const me = this;
-  if (config.bind && config.bind.value) {
-    const sanitizedHtml = DOMPurify.sanitize(config.bind.value);
-    config.bind.html = sanitizedHtml;
-    delete config.bind.value;
-  } else if (config.value) {
-    config.bind.html = config.value;
-  }
-  me.callParent([config]);
-}});
+Ext.define('FormsRenderer.view.form.component.Html', {extend:Ext.Component, alias:'widget.formsHtml', mixins:[FormsRenderer.view.form.component.Mixin], padding:10});
 Ext.define('FormsRenderer.view.form.component.DateField', {extend:Ext.field.Date, alias:'widget.formsDateField', mixins:[FormsRenderer.view.form.component.Mixin], altFormats:['d.m.Y', 'Y-m-d', 'm/d/Y'], parseValue:function(value) {
   if (typeof value === 'string' && this.isISODateString(value)) {
     return new Date(value);
@@ -70080,9 +70072,9 @@ Ext.define('FormsRenderer.view.form.component.FileField', {extend:Ext.field.File
   }
 }});
 Ext.define('FormsRenderer.ConfigParser', {singleton:true, fallBackLanguage:'de', componentTypeMap:{TEXTFIELD:{xtype:'formsTextField', bind:['value', 'hidden', 'required', 'disabled', 'readOnly']}, CHECKBOX:{xtype:'formsCheckbox', bind:['value', 'hidden', 'required', 'disabled']}, BUTTON:{xtype:'formsButton', bind:['hidden', 'disabled', 'target', 'value'], remap:{'label':'text'}}, CONTAINER:{xtype:'formsContainer', bind:['hidden', 'required', 'disabled', 'readOnly'], remap:{'label':'title'}}, FIELDSET:{xtype:'formsFieldSet', 
-bind:['hidden', 'required', 'disabled', 'readOnly'], remap:{'label':'title'}}, HTML:{xtype:'formsHtml', bind:['value', 'hidden']}, DATEFIELD:{xtype:'formsDateField', bind:['value', 'hidden', 'required', 'disabled', 'readOnly']}, NUMBERFIELD:{xtype:'formsNumberField', bind:['value', 'hidden', 'required', 'disabled', 'readOnly']}, TEXTAREA:{xtype:'formsTextArea', bind:['value', 'hidden', 'required', 'disabled', 'readOnly']}, RADIO:{xtype:'formsRadio', bind:['value', 'hidden', 'disabled']}, RADIOGROUP:{xtype:'formsRadioGroup', 
-formComponentConfigDefaults:{type:'radio'}, bind:['vertical', 'value', 'hidden', 'required', 'disabled']}, CHECKBOXGROUP:{xtype:'formsCheckboxGroup', formComponentConfigDefaults:{type:'checkbox'}, bind:['value', 'hidden', 'required', 'disabled']}, COMBOBOX:{xtype:'formsComboBox', bind:['value', 'hidden', 'required', 'disabled', 'options', 'readOnly'], remap:{'options':'store'}}, IMAGE:{xtype:'formsImage', bind:['hidden']}, TABLE:{xtype:'formsTable', bind:['data', 'disabled', 'hidden'], remap:{'label':'title'}}, 
-FILEFIELD:{xtype:'formsFileField', bind:['fileContent', 'hidden', 'required', 'disabled', 'value']}}, initAsync:function(formConfig) {
+bind:['hidden', 'required', 'disabled', 'readOnly'], remap:{'label':'title'}}, HTML:{xtype:'formsHtml', bind:['value', 'hidden'], remap:{'value':'html'}}, DATEFIELD:{xtype:'formsDateField', bind:['value', 'hidden', 'required', 'disabled', 'readOnly']}, NUMBERFIELD:{xtype:'formsNumberField', bind:['value', 'hidden', 'required', 'disabled', 'readOnly']}, TEXTAREA:{xtype:'formsTextArea', bind:['value', 'hidden', 'required', 'disabled', 'readOnly']}, RADIO:{xtype:'formsRadio', bind:['value', 'hidden', 
+'disabled']}, RADIOGROUP:{xtype:'formsRadioGroup', formComponentConfigDefaults:{type:'radio'}, bind:['vertical', 'value', 'hidden', 'required', 'disabled']}, CHECKBOXGROUP:{xtype:'formsCheckboxGroup', formComponentConfigDefaults:{type:'checkbox'}, bind:['value', 'hidden', 'required', 'disabled']}, COMBOBOX:{xtype:'formsComboBox', bind:['value', 'hidden', 'required', 'disabled', 'options', 'readOnly']}, IMAGE:{xtype:'formsImage', bind:['hidden']}, TABLE:{xtype:'formsTable', bind:['data', 'disabled', 
+'hidden'], remap:{'label':'title'}}, FILEFIELD:{xtype:'formsFileField', bind:['fileContent', 'hidden', 'required', 'disabled', 'value']}}, initAsync:function(formConfig) {
   const me = FormsRenderer.ConfigParser, language = formConfig.state.language, deferred = new Ext.Deferred();
   if (formConfig.metaData && formConfig.metaData.name) {
     document.title = formConfig.metaData.name;
@@ -70151,14 +70143,6 @@ FILEFIELD:{xtype:'formsFileField', bind:['fileContent', 'hidden', 'required', 'd
       component[targetAttribute] = config[sourceAttribute];
     }
   });
-  if (typeConfig.remap) {
-    for (const attribute in typeConfig.remap) {
-      if (component[attribute]) {
-        component[typeConfig.remap[attribute]] = component[attribute];
-        delete component[attribute];
-      }
-    }
-  }
   if (config.configuration) {
     Ext.apply(component, config.configuration);
   }
@@ -70174,6 +70158,18 @@ FILEFIELD:{xtype:'formsFileField', bind:['fileContent', 'hidden', 'required', 'd
         }
       }
     });
+  }
+  if (typeConfig.remap) {
+    for (const [attribute, remappedAttr] of Object.entries(typeConfig.remap)) {
+      const moveIfExists = source => {
+        if (source && source[attribute]) {
+          source[remappedAttr] = source[attribute];
+          delete source[attribute];
+        }
+      };
+      moveIfExists(component);
+      moveIfExists(component.bind);
+    }
   }
 }, getLocalizedValue:function(language, value) {
   if (!Ext.isObject(value)) {
