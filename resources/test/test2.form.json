@@ -22,24 +22,30 @@
           "id": "lastName",
           "type": "textField",
           "label": {
-            "de": "Nachname",
-            "en": "Lastname"
+            "MULTI_LANGUAGE": {
+              "de": "Nachname",
+              "en": "Lastname"
+            }
           }
         },
         {
           "id": "firstName",
           "type": "textField",
           "label": {
-            "de": "Vorname",
-            "en": "Firstname"
+            "MULTI_LANGUAGE": {
+              "de": "Vorname",
+              "en": "Firstname"
+            }
           }
         },
         {
           "id": "consent",
           "type": "checkbox",
           "label": {
-            "de": "OK?",
-            "en": "O.K.?"
+            "MULTI_LANGUAGE": {
+              "de": "OK?",
+              "en": "O.K.?"
+            }
           }
         },
         {
@@ -50,16 +56,20 @@
               "type": "button",
               "action": "reset",
               "label": {
-                "de": "Zurücksetzen",
-                "en": "reset"
+                "MULTI_LANGUAGE": {
+                  "de": "Zurücksetzen",
+                  "en": "reset"
+                }
               }
             },
             {
               "type": "button",
               "action": "submit",
               "label": {
-                "de": "Formular abschicken",
-                "en": "submit form"
+                "MULTI_LANGUAGE": {
+                  "de": "Formular abschicken",
+                  "en": "submit form"
+                }
               }
             }
           ]

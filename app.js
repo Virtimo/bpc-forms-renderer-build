@@ -69615,75 +69615,60 @@ Ext.define(null, {override:'Ext.Component', initialize:function() {
     }
   });
   me.callParent(arguments);
-}});
-Ext.define(null, {override:'Ext.Container', setReadOnly:function(value) {
-  this.getInnerItems().forEach(innerItem => {
-    if (innerItem.setReadOnly) {
-      innerItem.setReadOnly(value);
+  const fCC = me.formComponentConfig;
+  if (me.isFormsComponent && me.element && fCC) {
+    const renderer = me.up('formsRenderer');
+    if (renderer) {
+      const controller = renderer.getController();
+      if (fCC.onPainted) {
+        me.on('painted', () => controller.handleFieldAction(fCC.onPainted, fCC), me, {single:true});
+      }
+      if (fCC.onClick) {
+        me.element.on('click', () => controller.handleFieldAction(fCC.onClick, fCC));
+      }
     }
-  });
-}, setDisabled:function(value) {
-  this.getInnerItems().forEach(innerItem => {
-    if (innerItem.setDisabled) {
-      innerItem.setDisabled(value);
-    }
-  });
-}, setRequired:function(value) {
-  this.getInnerItems().forEach(innerItem => {
-    if (innerItem.setRequired) {
-      innerItem.setRequired(value);
-    }
-  });
+  }
+}, setHtml:function(html) {
+  this.callParent([DOMPurify.sanitize(html)]);
 }});
 Ext.define(null, {override:'Ext.field.Field', config:{errorTarget:'under', labelWidth:'auto'}, constructor:function(config) {
   const me = this;
   const formComponentConfig = config.formComponentConfig;
   const formConfig = config.formConfig;
-  if (formComponentConfig) {
-    const icon = formComponentConfig ? formComponentConfig.icon : undefined;
-    if (icon) {
-      config.label = `<i class="${icon}"></i>&nbsp ${config.label}`;
-    }
-    if (formComponentConfig.onChange) {
-      const onChangeConfig = formComponentConfig.onChange;
-      const action = onChangeConfig.action;
-      let handler;
-      if (action === 'getFormState' || action === 'submit') {
-        handler = () => {
-          if (!me.hasFocus) {
-            return;
-          }
-          const rendererController = me.up('formsRenderer').getController();
-          let stateUrl;
-          if (onChangeConfig.data && onChangeConfig.data.stateUrl) {
-            stateUrl = onChangeConfig.data.stateUrl;
-          } else if (me.formConfig.configuration) {
-            stateUrl = me.formConfig.configuration.stateUrl;
-          }
-          if (stateUrl) {
-            const currentValue = me.getValue();
-            const originator = Ext.apply({}, {value:currentValue, name:formComponentConfig.name, id:formComponentConfig.id}, me.formComponentConfig);
-            rendererController.callBackend(stateUrl, 'submit', originator);
-          } else {
-            Ext.log({msg:'stateURL is missing in form configuration', level:'warn'});
-          }
-        };
-      } else if (action === 'validate') {
-        handler = () => {
-          const rendererController = me.up('formsRenderer').getController();
-          rendererController.validateData(me);
-        };
-      }
-      if (handler) {
-        let bufferTime;
-        if (formConfig.configuration) {
-          bufferTime = formConfig.configuration.onChangeBufferTime || 1000;
-        }
-        config.listeners = {change:{fn:handler, buffer:bufferTime}};
-      }
-    }
+  const icon = formComponentConfig?.icon;
+  if (icon) {
+    config.label = `<i class="${icon}"></i>&nbsp ${config.label ?? ''}`;
   }
   me.callParent([config]);
+  const renderer = me.up('formsRenderer');
+  if (renderer) {
+    const rendererController = renderer.getController();
+    if (formConfig.configuration.validateOnBlur === true) {
+      me.addListener('blur', () => rendererController.validateData(me, {onlyValidateSource:true, applyErrors:true}));
+    } else if (formConfig.configuration.validateOnChange === true) {
+      me.addListener('blurAfterChange', () => rendererController.validateData(me, {onlyValidateSource:true, applyErrors:true}));
+    }
+    if (formComponentConfig.onChange) {
+      me.addListener('blurAfterChange', () => rendererController.handleFieldAction(formComponentConfig.onChange, formComponentConfig));
+    }
+    me.addListener('change', (field, oldValue, newValue) => {
+      if (me.hasFocus) {
+        field.hasChanged = true;
+        field.oldValue = oldValue;
+        field.newValue = newValue;
+      }
+    });
+    me.addListener('blur', () => {
+      me.hasFocus = false;
+      if (me.hasChanged && (me.oldValue || me.newValue)) {
+        me.hasChanged = false;
+        me.fireEvent('blurAfterChange', me);
+      }
+    });
+    me.addListener('focus', () => {
+      me.hasFocus = true;
+    });
+  }
   let errorMessage = me.getErrorMessage();
   if (Array.isArray(errorMessage) && errorMessage.length > 0) {
     errorMessage = errorMessage[0];
@@ -69691,6 +69676,9 @@ Ext.define(null, {override:'Ext.field.Field', config:{errorTarget:'under', label
   if (errorMessage === me.getRequiredMessage()) {
     me.setError(null);
   }
+}, initialize:function() {
+  const me = this;
+  me.callParent(arguments);
 }, setRequired:function(required) {
   const me = this;
   me.callParent(arguments);
@@ -69700,6 +69688,74 @@ Ext.define(null, {override:'Ext.field.Field', config:{errorTarget:'under', label
   me.callParent(arguments);
   me.setError(null);
 }});
+Ext.define('FormsRenderer.data.field.gridDate', {extend:Ext.data.field.Date, alias:'data.field.gridDate', altFormats:['d.m.Y', 'Y-m-d', 'm/d/Y'], convert:function(value) {
+  const me = this;
+  if (!value || Ext.isDate(value)) {
+    return value;
+  }
+  for (const altF of me.altFormats) {
+    const altFormatParsed = Ext.Date.parse(value, altF);
+    if (altFormatParsed) {
+      return altFormatParsed;
+    }
+  }
+  return me.callParent(arguments);
+}});
+Ext.define(null, {override:'Ext.field.Select', syncValue:function() {
+  let me = this, store = me.getStore(), forceSelection = me.getForceSelection(), valueNotFoundText = me.getValueNotFoundText(), is, isCleared, isInput, value, matchedRecord;
+  if (me.reconcilingValue || !store || !store.isLoaded() || store.hasPendingLoad()) {
+    return;
+  }
+  me.reconcilingValue = true;
+  me.getSelection();
+  is = {};
+  is[me.syncMode] = true;
+  value = (isInput = is.input || is.filter) ? me.getInputValue() : me.getValue();
+  isCleared = value == null || value === '';
+  if (!isCleared) {
+    if (me.getMultiSelect()) {
+      return me.syncMultiValues(Ext.Array.from(value));
+    }
+    matchedRecord = (isInput ? store.byText : store.byValue).get(value);
+    if (matchedRecord) {
+      if (!matchedRecord.isEntity) {
+        matchedRecord = matchedRecord[0];
+      }
+    } else if (!forceSelection) {
+      matchedRecord = me.findRecordByValue(value);
+    }
+  }
+  if (!isCleared && !matchedRecord && !forceSelection) {
+    matchedRecord = me.createEnteredRecord(value);
+  } else {
+    if (isInput || is.store) {
+      if (!matchedRecord && forceSelection) {
+        me.setValue(null);
+        me.setSelection(null);
+        if (!is.filter) {
+          me.setFieldDisplay();
+        }
+      }
+    } else {
+      if (isCleared) {
+        if (me.mustAutoSelect()) {
+          matchedRecord = store.first();
+          if (me.getAutoSelect() === 'initial') {
+            me.setAutoSelect(false);
+          }
+        } else {
+          me.setSelection(null);
+        }
+      } else if (!matchedRecord && valueNotFoundText) {
+        me.setError(valueNotFoundText);
+      }
+    }
+  }
+  if (matchedRecord) {
+    me.setSelection(matchedRecord);
+  }
+  me.reconcilingValue = false;
+}});
 Ext.define('FormsRenderer.Application', {extend:Ext.app.Application, name:'FormsRenderer', quickTips:false, platformConfig:{desktop:{quickTips:true}}, onAppUpdate:function() {
   Ext.Msg.confirm('Application Update', 'This application has an update, reload?', function(choice) {
     if (choice === 'yes') {
@@ -69708,7 +69764,7 @@ Ext.define('FormsRenderer.Application', {extend:Ext.app.Application, name:'Forms
   });
 }});
 window.addEventListener('message', event => {
-  console.warn(event.data);
+  Ext.log({msg:`Message received: ${event.data}`, level:'info'});
   if (Ext.isString(event.data) && event.isTrusted !== false) {
     const dataJson = Ext.JSON.decode(event.data, true);
     if (dataJson) {
@@ -69718,7 +69774,122 @@ window.addEventListener('message', event => {
     }
   }
 }, false);
-Ext.define('FormsRenderer.view.form.component.Mixin', {extend:Ext.Mixin, isFormsComponent:true});
+Ext.define('FormsRenderer.BindStringParser', {singleton:true, alternateClassName:'BindParser', convertJsonPointerToBind:function(input) {
+  return input.replace('/', '').replaceAll('/', '.');
+}, convertJsonPointerToExtJSBinding:function(input) {
+  return `{${BindParser.convertJsonPointerToBind(input)}}`;
+}, getBindString:function(input) {
+  function getMatchingAndNonMatching(regex, string) {
+    const matches = string.matchAll(regex);
+    const result = [];
+    let startIndex = 0;
+    for (const match of matches) {
+      const startInString = match.index;
+      const endInString = startInString + match[0].length;
+      if (startInString > 0) {
+        result.push({substring:string.substring(startIndex, startInString), isMatch:false});
+      }
+      result.push({substring:string.substring(startInString, endInString), isMatch:true});
+      startIndex = endInString;
+    }
+    if (startIndex < string.length) {
+      result.push({substring:string.substring(startIndex, string.length), isMatch:false});
+    }
+    return result;
+  }
+  function convert(expression) {
+    const pathRegex = /(\/\w+)+/g;
+    const primitiveValues = ['true', 'false', 'null', ''];
+    const operatorRegex = /\+|\-|\*|\/|=|!|<|>|&&|\|\||\?|:|\(|\)/g;
+    const matchingAndNonMatching = getMatchingAndNonMatching(pathRegex, expression);
+    for (const sub of matchingAndNonMatching) {
+      if (!sub.isMatch) {
+        let substring = sub.substring;
+        substring = substring.replaceAll(/\s/g, '');
+        const operatorMatchingAndNonMatching = getMatchingAndNonMatching(operatorRegex, substring);
+        for (const token of operatorMatchingAndNonMatching) {
+          if (!token.isMatch) {
+            if (!primitiveValues.includes(token.substring) && Number.isNaN(Number(token.substring))) {
+              throw new Error(`Unexpected token '${token.substring}' in '${expression}'.`);
+            }
+          }
+        }
+      }
+    }
+    let numberOfConversions = 0;
+    const convertedExpression = expression.replaceAll(pathRegex, target => {
+      if (Number.isInteger(Number(target[1]))) {
+        if (/^(\/\d+)+$/.test(target)) {
+          return target;
+        }
+        throw new Error(`${target} in ${expression} is invalid. Target can not start with numbers.`);
+      }
+      numberOfConversions++;
+      return BindParser.convertJsonPointerToBind(target);
+    });
+    return {conversion:convertedExpression, numberOfConversions:numberOfConversions};
+  }
+  function convertPathWithStrings(input) {
+    if (input.length === 0) {
+      throw new Error('Bind without target.');
+    }
+    let numberOfConversions = 0;
+    let result = '';
+    const matchingAndNonMatching = getMatchingAndNonMatching(/('.*?')/g, input);
+    for (const sub of matchingAndNonMatching) {
+      if (sub.isMatch) {
+        result += sub.substring;
+      } else {
+        const conversion = convert(sub.substring);
+        result += conversion.conversion;
+        numberOfConversions += conversion.numberOfConversions;
+      }
+    }
+    return {conversion:`{${result}}`, numberOfConversions:numberOfConversions};
+  }
+  function findMatchingBrace(input, startIndex) {
+    let inString = false;
+    for (let i = startIndex; i < input.length; i++) {
+      if (input[i] === "'") {
+        inString = !inString;
+      } else if (input[i] === '}' && !inString) {
+        return i;
+      }
+    }
+    throw new Error(`Unclosed \${ expression in ${input}.`);
+  }
+  let numberOfConversions = 0;
+  let translated = false;
+  let result = '';
+  let i = 0;
+  while (i < input.length) {
+    if (input.at(i) === '{') {
+      throw new Error(`Used '{' in ${input}, which is not supported. Use '${'${'}' for binding instead.`);
+    }
+    if (input.substring(i, i + 2) === '${') {
+      translated = true;
+      let endIndex = findMatchingBrace(input, i + 2);
+      const expr = input.slice(i + 2, endIndex).trim();
+      const conversion = convertPathWithStrings(expr);
+      numberOfConversions += conversion.numberOfConversions;
+      result += conversion.conversion;
+      i = endIndex;
+    } else {
+      result += input[i];
+    }
+    i++;
+  }
+  return {conversion:result, numberOfConversions:numberOfConversions, translated:translated};
+}});
+Ext.define('FormsRenderer.view.form.component.Mixin', {extend:Ext.Mixin, isFormsComponent:true, getBindPointer:function() {
+  const me = this;
+  if (me.getBind && me.getBind()?.value?.stub) {
+    let bindString = me.getBind().value.stub.path;
+    bindString = `/${bindString.replaceAll('.', '/')}`;
+    return bindString;
+  }
+  return null;
+}});
 Ext.define('FormsRenderer.view.form.component.TextField', {extend:Ext.field.Text, alias:'widget.formsTextField', mixins:[FormsRenderer.view.form.component.Mixin]});
 Ext.define('FormsRenderer.view.form.component.Checkbox', {extend:Ext.field.Checkbox, alias:'widget.formsCheckbox', mixins:[FormsRenderer.view.form.component.Mixin], formConfig:undefined, formComponentConfig:undefined, publishes:{value:true}, setValue:function(value) {
   const me = this;
@@ -69737,27 +69908,26 @@ Ext.define('FormsRenderer.view.form.component.Checkbox', {extend:Ext.field.Check
   me.callParent(arguments);
   me.setValue(checked);
 }});
-Ext.define('FormsRenderer.view.form.component.Button', {extend:Ext.Button, alias:'widget.formsButton', mixins:[FormsRenderer.view.form.component.Mixin], formConfig:undefined, formComponentConfig:undefined, constructor:function(config) {
+Ext.define('FormsRenderer.view.form.component.Button', {extend:Ext.Button, alias:'widget.formsButton', config:{target:null, value:null}, mixins:[FormsRenderer.view.form.component.Mixin], formConfig:undefined, formComponentConfig:undefined, constructor:function(config) {
   const me = this;
   const icon = config.formComponentConfig ? config.formComponentConfig.icon : undefined;
   if (icon) {
     config.iconCls = FormsRenderer.common.Util.getIconWithExtPrefix(icon);
   }
-  config.text = config.label;
-  delete config.label;
   me.callParent([config]);
 }});
 Ext.define('FormsRenderer.view.form.component.Container', {extend:Ext.field.Panel, alias:'widget.formsContainer', mixins:[FormsRenderer.view.form.component.Mixin], formConfig:undefined, formComponentConfig:undefined, padding:10, scrollable:true, constructor:function(config) {
   const me = this;
-  config.title = config.label;
-  delete config.label;
-  if (!config.title) {
+  if (!config.title && !config.formComponentConfig.languageButton) {
     config.header = false;
   } else {
-    const icon = config.formComponentConfig ? config.formComponentConfig.icon : undefined;
+    const icon = config?.formComponentConfig?.icon;
     if (icon) {
       config.iconCls = FormsRenderer.common.Util.getIconWithExtPrefix(icon);
     }
+  }
+  if (config.formComponentConfig.languageButton) {
+    config.header = {items:[me.getLanguageChangeButton()]};
   }
   if (config.formComponentConfig.layout) {
     config.layout = config.formComponentConfig.layout;
@@ -69769,6 +69939,23 @@ Ext.define('FormsRenderer.view.form.component.Container', {extend:Ext.field.Pane
   if (config['readOnly'] === true) {
     me.setReadOnly(config['readOnly']);
   }
+}, getLanguageChangeButton:function() {
+  return {xtype:'button', bind:{text:'{language}'}, itemId:'languageChangeButton', iconCls:FormsRenderer.common.Util.getIconWithExtPrefix('fal fa-globe panel-header-button-icon'), cls:'panel-header-button', handler:function(button) {
+    const rendererController = button.up('formsRenderer').getController(), vm = rendererController.getViewModel();
+    let menu = button.menuInstance;
+    if (!menu) {
+      menu = Ext.create('Ext.menu.Menu', {items:[]});
+      button.menuInstance = menu;
+    }
+    menu.removeAll();
+    let languageOptions = vm.get('languageOptions') || [];
+    languageOptions.forEach(option => {
+      menu.add({text:option.label, value:option.value, handler:function() {
+        vm.set('language', option.value);
+      }});
+    });
+    menu.showBy(button);
+  }};
 }, applyLayout:function(layout, oldLayout) {
   const me = this;
   if (String(layout).toUpperCase() === 'HORIZONTAL') {
@@ -69777,18 +69964,34 @@ Ext.define('FormsRenderer.view.form.component.Container', {extend:Ext.field.Pane
     return me.callParent(['vbox', oldLayout]);
   }
   return me.callParent(arguments);
+}, setReadOnly:function(value) {
+  this.getInnerItems().forEach(innerItem => {
+    if (innerItem.setReadOnly) {
+      innerItem.setReadOnly(value);
+    }
+  });
+}, setDisabled:function(value) {
+  this.getInnerItems().forEach(innerItem => {
+    if (innerItem.setDisabled) {
+      innerItem.setDisabled(value);
+    }
+  });
+}, setRequired:function(value) {
+  this.getInnerItems().forEach(innerItem => {
+    if (innerItem.setRequired) {
+      innerItem.setRequired(value);
+    }
+  });
 }});
 Ext.define('FormsRenderer.view.form.component.FieldSet', {extend:Ext.form.FieldSet, alias:'widget.formsFieldSet', mixins:[FormsRenderer.view.form.component.Mixin], formConfig:undefined, formComponentConfig:undefined, padding:10, constructor:function(config) {
   const me = this;
   if (config.formComponentConfig.layout) {
     config.layout = config.formComponentConfig.layout;
   }
-  const icon = config.formComponentConfig.icon;
+  const icon = config?.formComponentConfig?.icon;
   if (icon) {
-    config.label = `<i class="${icon}">&nbsp${config.label}`;
+    config.title = `<i class="${icon}">&nbsp${config.title || ''}`;
   }
-  config.title = config.label;
-  delete config.label;
   me.callParent([config]);
   if (config['required'] === true) {
     me.setRequired(config['required']);
@@ -69804,23 +70007,49 @@ Ext.define('FormsRenderer.view.form.component.FieldSet', {extend:Ext.form.FieldS
     return me.callParent(['vbox', oldLayout]);
   }
   return me.callParent(arguments);
+}, setReadOnly:function(value) {
+  this.getInnerItems().forEach(innerItem => {
+    if (innerItem.setReadOnly) {
+      innerItem.setReadOnly(value);
+    }
+  });
+}, setDisabled:function(value) {
+  this.getInnerItems().forEach(innerItem => {
+    if (innerItem.setDisabled) {
+      innerItem.setDisabled(value);
+    }
+  });
+}, setRequired:function(value) {
+  this.getInnerItems().forEach(innerItem => {
+    if (innerItem.setRequired) {
+      innerItem.setRequired(value);
+    }
+  });
 }});
-Ext.define('FormsRenderer.view.form.component.Html', {extend:Ext.Component, alias:'widget.formsHtml', mixins:[FormsRenderer.view.form.component.Mixin], formConfig:undefined, formComponentConfig:undefined, padding:10, constructor:function(config) {
-  const me = this;
-  if (config.bind && config.bind.value) {
-    const sanitizedHtml = DOMPurify.sanitize(config.bind.value);
-    config.bind.html = sanitizedHtml;
-    delete config.bind.value;
-  } else if (config.value) {
-    config.bind.html = config.value;
+Ext.define('FormsRenderer.view.form.component.Html', {extend:Ext.Component, alias:'widget.formsHtml', mixins:[FormsRenderer.view.form.component.Mixin], padding:10});
+Ext.define('FormsRenderer.view.form.component.DateField', {extend:Ext.field.Date, alias:'widget.formsDateField', mixins:[FormsRenderer.view.form.component.Mixin], altFormats:['d.m.Y', 'Y-m-d', 'm/d/Y'], parseValue:function(value) {
+  if (typeof value === 'string' && this.isISODateString(value)) {
+    return new Date(value);
   }
-  me.callParent([config]);
+  return this.callParent(arguments);
+}, isISODateString:function(str) {
+  const date = Date.parse(str);
+  return !isNaN(date) && str === (new Date(date)).toISOString();
 }});
-Ext.define('FormsRenderer.view.form.component.DateField', {extend:Ext.field.Date, alias:'widget.formsDateField', mixins:[FormsRenderer.view.form.component.Mixin]});
 Ext.define('FormsRenderer.view.form.component.NumberField', {extend:Ext.field.Number, alias:'widget.formsNumberField', mixins:[FormsRenderer.view.form.component.Mixin]});
 Ext.define('FormsRenderer.view.form.component.TextArea', {extend:Ext.field.TextArea, alias:'widget.formsTextArea', mixins:[FormsRenderer.view.form.component.Mixin]});
-Ext.define('FormsRenderer.view.form.component.Radio', {extend:Ext.field.Radio, alias:'widget.formsRadio', mixins:[FormsRenderer.view.form.component.Mixin]});
-Ext.define('FormsRenderer.view.form.component.RadioGroup', {extend:Ext.field.RadioGroup, alias:'widget.formsRadioGroup', mixins:[FormsRenderer.view.form.component.Mixin], validate:function(skipLazy) {
+Ext.define('FormsRenderer.view.form.component.Radio', {extend:Ext.field.Radio, alias:'widget.formsRadio', mixins:[FormsRenderer.view.form.component.Mixin], onBlur:function() {
+  this.parentRadioGroup.fireEvent('blur', this.parentRadioGroup);
+}, onFocus:function() {
+  this.parentRadioGroup.fireEvent('focus', this.parentRadioGroup);
+}});
+Ext.define('FormsRenderer.view.form.component.RadioGroup', {extend:Ext.field.RadioGroup, alias:'widget.formsRadioGroup', mixins:[FormsRenderer.view.form.component.Mixin], constructor:function(config) {
+  const me = this;
+  me.callParent([config]);
+  this.getGroupItems().forEach(innerItem => {
+    innerItem.parentRadioGroup = me;
+  });
+}, validate:function(skipLazy) {
   let me = this, empty, errors, field, record, validity, value;
   if (me.isConfiguring && me.validateOnInit === 'none') {
     return true;
@@ -69872,7 +70101,21 @@ Ext.define('FormsRenderer.view.form.component.RadioGroup', {extend:Ext.field.Rad
   const me = this;
   me.setErrorMessage(value);
 }});
-Ext.define('FormsRenderer.view.form.component.CheckboxGroup', {extend:Ext.field.CheckboxGroup, alias:'widget.formsCheckboxGroup', mixins:[FormsRenderer.view.form.component.Mixin], setDisabled:function(value) {
+Ext.define('FormsRenderer.view.form.component.CheckboxGroup', {extend:Ext.field.CheckboxGroup, alias:'widget.formsCheckboxGroup', mixins:[FormsRenderer.view.form.component.Mixin], constructor:function(config) {
+  this.callParent([config]);
+  const groupItems = this.getGroupItems();
+  for (let i = 0; i < groupItems.length; i++) {
+    const innerItem = groupItems[i];
+    let name = `${i}`;
+    if (innerItem.getLabel()) {
+      name += `-${innerItem.getLabel()}`;
+    }
+    if (innerItem.getId()) {
+      name += `-${innerItem.getId()}`;
+    }
+    innerItem.setName(name);
+  }
+}, setDisabled:function(value) {
   this.callParent(arguments);
   this.getGroupItems().forEach(innerItem => {
     innerItem.setDisabled(value);
@@ -69882,51 +70125,7 @@ Ext.define('FormsRenderer.view.form.component.CheckboxGroup', {extend:Ext.field.
     innerItem.setRequired(value);
   });
 }});
-Ext.define('FormsRenderer.view.form.component.ComboBox', {extend:Ext.field.ComboBox, alias:'widget.formsComboBox', mixins:[FormsRenderer.view.form.component.Mixin], formConfig:undefined, formComponentConfig:undefined, publishes:{value:true}, displayField:'label', valueField:'value', queryMode:'local', forceSelection:true, constructor:function(config) {
-  const me = this;
-  config.store = {data:[]};
-  me.callParent([config]);
-  const bind = config.bind;
-  if (!bind.options) {
-    const constformConfig = config.formComponentConfig;
-    me.setStoreData(constformConfig.options);
-  } else if (Ext.isString(bind.options)) {
-    const bindStringRegex = /^{data(\.[^/]+){1}}/g;
-    if (bindStringRegex.test(bind.options)) {
-      const bindString = bind.options;
-      const state = config.formConfig.state;
-      if (state) {
-        const jsonPoints = bindString.replace('{', '').replace('}', '').split('.');
-        let options = state;
-        Ext.each(jsonPoints, point => {
-          if (options) {
-            options = options[point];
-          }
-        });
-        me.setStoreData(options || []);
-      }
-    }
-  }
-}, setStoreData:function(options) {
-  const me = this;
-  const store = me.getStore();
-  let storeData;
-  if (options && Ext.isArray(options)) {
-    storeData = options;
-  } else if (options && Ext.isString(options)) {
-    storeData = [];
-  }
-  const formConfig = me.config.formConfig;
-  if (Ext.isArray(storeData)) {
-    Ext.each(storeData, item => {
-      if (Ext.isObject(item.label)) {
-        const language = formConfig.state.language || 'de';
-        item.label = item.label[language];
-      }
-    });
-  }
-  store.setData(storeData);
-}});
+Ext.define('FormsRenderer.view.form.component.ComboBox', {extend:Ext.field.ComboBox, alias:'widget.formsComboBox', mixins:[FormsRenderer.view.form.component.Mixin], formConfig:undefined, formComponentConfig:undefined, publishes:{value:true}, displayField:'label', valueField:'value', forceSelection:true});
 Ext.define('FormsRenderer.view.form.component.Image', {extend:Ext.Img, alias:'widget.formsImage', mixins:[FormsRenderer.view.form.component.Mixin], constructor:function(config) {
   const me = this;
   if (config.formComponentConfig) {
@@ -69951,61 +70150,36 @@ Ext.define('FormsRenderer.view.form.component.Image', {extend:Ext.Img, alias:'wi
   me.callParent([config]);
 }});
 Ext.define('FormsRenderer.view.form.table.Table', {extend:Ext.grid.Grid, alias:'widget.formsTable', mixins:[FormsRenderer.view.form.component.Mixin], formConfig:undefined, formComponentConfig:undefined, scrollable:true, constructor:function(config) {
-  const me = this;
-  const formComponentConfig = config.formComponentConfig;
-  config.title = formComponentConfig.label;
+  const me = this, formComponentConfig = config.formComponentConfig;
   config.columns = FormsRenderer.view.form.table.ColumnConfigParser.getColumns(formComponentConfig, formComponentConfig.columns);
-  if (formComponentConfig.data) {
-    if (Ext.isString(formComponentConfig.data)) {
-      config.store = me.getBindData(config.formConfig, formComponentConfig.data);
-    } else if (Ext.isArray(formComponentConfig.data)) {
-      config.store = me.getDataStore(formComponentConfig);
-    }
+  const fields = config.columns.map(col => ({name:col.dataIndex, type:col.columnType}));
+  if (config.data) {
+    config.store = {fields:fields, data:config.data};
+    delete config.data;
+  } else if (config.bind?.data) {
+    config.bind.store = {fields:fields, data:config.bind.data};
+    delete config.bind.data;
   }
   if (formComponentConfig.cellEditing) {
-    config.plugins = {gridcellediting:{}};
+    config.plugins = {cellediting:true};
   }
   if (formComponentConfig.rowEditing) {
-    config.plugins = {rowedit:{}};
+    config.plugins = {rowedit:true};
   }
   me.callParent([config]);
-}, getDataStore:function(formComponentConfig) {
-  const me = this;
-  if (formComponentConfig.dataUrl) {
-    let storeData = [];
-    Ext.Ajax.request({url:formComponentConfig.dataUrl, method:'GET', success:response => {
-      try {
-        const responseJSON = JSON.parse(response.responseText);
-        storeData = responseJSON.data.data;
-      } catch (err) {
-        Ext.log({level:'warn', msg:'Set store for table failed: data response may not be in well-formed JSON', dump:err});
-      }
-      me.setStore(storeData);
-    }, failure:response => {
-      Ext.Msg.alert('ERROR: Data load error', 'Data of the table could not be loaded.');
-    }});
-  } else if (Ext.isArray(formComponentConfig.data)) {
-    return formComponentConfig.data;
-  }
-}, getBindData:function(formConfig, bindingString) {
-  const formState = formConfig.state;
-  let data = formState;
-  const bindArray = bindingString.split('/');
-  bindArray.splice(0, 1);
-  Ext.each(bindArray, bindCmp => {
-    data = data[bindCmp];
-  });
-  return data;
 }});
 Ext.define('FormsRenderer.view.form.component.FileField', {extend:Ext.field.File, alias:'widget.formsFileField', config:{fileContent:''}, publishes:['fileContent'], mixins:[FormsRenderer.view.form.component.Mixin], listeners:{change:(fileField, newValue) => {
   const fileBtnEl = fileField.getFileButton().buttonElement;
   const file = fileBtnEl.dom.files[0];
   fileField.getBase64(file);
+}, focusleave:function(fileField) {
+  fileField.fireEvent('blur', fileField);
+}, focusenter:function(fileField) {
+  fileField.fireEvent('focus', fileField);
 }}, constructor:function(config) {
   const me = this;
   if (config.bind.value) {
     config.bind.fileContent = config.bind.value;
-    delete config.bind.value;
   }
   me.callParent([config]);
 }, getBase64:function(file) {
@@ -70021,26 +70195,34 @@ Ext.define('FormsRenderer.view.form.component.FileField', {extend:Ext.field.File
     };
   }
 }});
-Ext.define('FormsRenderer.ConfigParser', {singleton:true, componentTypeMap:{TEXTFIELD:{xtype:'formsTextField', bind:['value', 'hidden', 'required', 'disabled', 'readOnly']}, CHECKBOX:{xtype:'formsCheckbox', bind:['value', 'hidden', 'required', 'disabled']}, BUTTON:{xtype:'formsButton', bind:['hidden', 'disabled']}, CONTAINER:{xtype:'formsContainer', bind:['hidden', 'required', 'disabled', 'readOnly']}, FIELDSET:{xtype:'formsFieldSet', bind:['hidden', 'required', 'disabled', 'readOnly']}, HTML:{xtype:'formsHtml', 
-bind:['value', 'hidden']}, DATEFIELD:{xtype:'formsDateField', bind:['value', 'hidden', 'required', 'disabled', 'readOnly']}, NUMBERFIELD:{xtype:'formsNumberField', bind:['value', 'hidden', 'required', 'disabled', 'readOnly']}, TEXTAREA:{xtype:'formsTextArea', bind:['value', 'hidden', 'required', 'disabled', 'readOnly']}, RADIO:{xtype:'formsRadio', bind:['value', 'hidden', 'disabled']}, RADIOGROUP:{xtype:'formsRadioGroup', formComponentConfigDefaults:{type:'radio'}, bind:['vertical', 'value', 'hidden', 
-'required', 'disabled']}, CHECKBOXGROUP:{xtype:'formsCheckboxGroup', formComponentConfigDefaults:{type:'checkbox'}, bind:['value', 'hidden', 'required', 'disabled']}, COMBOBOX:{xtype:'formsComboBox', bind:['value', 'hidden', 'required', 'disabled', 'options', 'readOnly']}, IMAGE:{xtype:'formsImage', bind:['hidden']}, TABLE:{xtype:'formsTable', bind:['data', 'hidden']}, FILEFIELD:{xtype:'formsFileField', bind:['fileContent', 'hidden', 'required', 'disabled', 'value']}}, initAsync:function(formConfig) {
-  const deferred = new Ext.Deferred();
-  const me = this;
-  if (formConfig.metaData && formConfig.metaData.name) {
+Ext.define('FormsRenderer.ConfigParser', {singleton:true, alternateClassName:'ConfigParser', fallBackLanguage:'en', componentTypeMap:{TEXTFIELD:{xtype:'formsTextField', bind:['value', 'hidden', 'required', 'disabled', 'readOnly']}, CHECKBOX:{xtype:'formsCheckbox', bind:['value', 'hidden', 'required', 'disabled']}, BUTTON:{xtype:'formsButton', bind:['hidden', 'disabled', 'target', 'value'], remap:{'label':'text'}}, CONTAINER:{xtype:'formsContainer', bind:['hidden', 'required', 'disabled', 'readOnly'], 
+remap:{'label':'title'}}, FIELDSET:{xtype:'formsFieldSet', bind:['hidden', 'required', 'disabled', 'readOnly'], remap:{'label':'title'}}, HTML:{xtype:'formsHtml', bind:['value', 'hidden'], remap:{'value':'html'}}, DATEFIELD:{xtype:'formsDateField', bind:['value', 'hidden', 'required', 'disabled', 'readOnly']}, NUMBERFIELD:{xtype:'formsNumberField', bind:['value', 'hidden', 'required', 'disabled', 'readOnly']}, TEXTAREA:{xtype:'formsTextArea', bind:['value', 'hidden', 'required', 'disabled', 'readOnly']}, 
+RADIO:{xtype:'formsRadio', bind:['value', 'hidden', 'disabled']}, RADIOGROUP:{xtype:'formsRadioGroup', formComponentConfigDefaults:{type:'radio'}, bind:['vertical', 'value', 'hidden', 'required', 'disabled']}, CHECKBOXGROUP:{xtype:'formsCheckboxGroup', formComponentConfigDefaults:{type:'checkbox'}, bind:['value', 'hidden', 'required', 'disabled']}, COMBOBOX:{xtype:'formsComboBox', bind:['value', 'hidden', 'required', 'disabled', 'options', 'readOnly']}, IMAGE:{xtype:'formsImage', bind:['hidden']}, 
+TABLE:{xtype:'formsTable', bind:['data', 'disabled', 'hidden'], remap:{'label':'title'}}, FILEFIELD:{xtype:'formsFileField', bind:['fileContent', 'hidden', 'required', 'disabled', 'value']}}, initAsync:async function(formConfig) {
+  const me = ConfigParser, language = formConfig.state.language;
+  if (formConfig?.metaData?.name) {
     document.title = formConfig.metaData.name;
   }
-  Ext.Loader.loadScript({url:`resources/locale/ext-locale-${me.getLocalization(formConfig)}.js`, onLoad:() => {
-    Ext.onReady(() => {
-      Ext.util.Format.defaultDateFormat = Ext.Date.defaultFormat || Ext.util.Format.Ext.util.Format;
-      deferred.resolve();
+  function loadLocale(locale, file) {
+    return new Promise(resolve => {
+      Ext.Loader.loadScript({url:`resources/locale/${locale}/${file}-locale-${locale}.js?_=${(new Date()).getTime()}`, onLoad:() => {
+        Ext.onReady(() => {
+          Ext.util.Format.defaultDateFormat = Ext.Date.defaultFormat || Ext.util.Format.Ext.util.Format;
+          resolve();
+        });
+      }, onError:() => {
+        Ext.log({msg:`loading ${file}-locale for language ${locale} failed`, level:'error'});
+        if (locale !== me.fallBackLanguage) {
+          loadLocale(me.fallBackLanguage, file).then(resolve);
+        } else {
+          resolve();
+        }
+      }});
     });
-  }, onError:() => {
-    Ext.log({msg:'loading locale failed', level:'error'});
-    deferred.resolve();
-  }});
-  return deferred.promise;
+  }
+  await Promise.all([loadLocale(language, 'ext'), loadLocale(language, 'forms')]);
 }, getComponents:function(formConfig, componentsArray, formComponentConfigDefaults) {
-  const me = FormsRenderer.ConfigParser;
+  const me = ConfigParser;
   let internalComponentsArray = [];
   try {
     if (!componentsArray) {
@@ -70055,7 +70237,7 @@ bind:['value', 'hidden']}, DATEFIELD:{xtype:'formsDateField', bind:['value', 'hi
   return internalComponentsArray;
 }, getComponent:function(formConfig, formComponentConfig, formComponentConfigDefaults) {
   try {
-    const me = FormsRenderer.ConfigParser, mergedFormComponentConfig = Ext.applyIf(formComponentConfig, formComponentConfigDefaults), type = mergedFormComponentConfig ? mergedFormComponentConfig.type : null;
+    const me = ConfigParser, mergedFormComponentConfig = Ext.applyIf(formComponentConfig, formComponentConfigDefaults), type = mergedFormComponentConfig ? mergedFormComponentConfig.type : null;
     const componentTypeConfig = me.componentTypeMap[String(type).toUpperCase()];
     if (!componentTypeConfig) {
       Ext.log({msg:`${me.self.getName()}: getComponent - unknown component type ${type}`, level:'warn'});
@@ -70068,144 +70250,145 @@ bind:['value', 'hidden']}, DATEFIELD:{xtype:'formsDateField', bind:['value', 'hi
     if (Ext.isArray(mergedFormComponentConfig.options) && componentTypeConfig.formComponentConfigDefaults) {
       internalComponentConfig.items = me.getComponents(formConfig, mergedFormComponentConfig.options, componentTypeConfig.formComponentConfigDefaults);
     }
-    me.applyCommonConfiguration(formConfig, formComponentConfig, internalComponentConfig);
+    me.applyCommonConfiguration(internalComponentConfig, formComponentConfig, componentTypeConfig);
     return internalComponentConfig;
   } catch (e) {
     Ext.log({msg:`${this.self.getName()}: ERROR getComponent`, dump:e, stack:true, level:'error'});
   }
-}, applyCommonConfiguration:function(formConfig, formComponentConfig, targetComponent) {
-  try {
-    const me = FormsRenderer.ConfigParser, componentTypeConfig = me.componentTypeMap[formComponentConfig.type.toUpperCase()];
-    targetComponent.language = me.getLocalization(formConfig);
-    if (formComponentConfig.label) {
-      targetComponent.label = me.getLocalizedValue(formConfig, formComponentConfig.label);
+}, applyCommonConfiguration:function(component, config, typeConfig) {
+  const nonBindableAttributes = ['action', 'minWidth', 'minHeight', 'width', 'height', 'maxWidth', 'maxHeight', 'errorTarget', 'boxLabel', 'flex', 'label', 'labelAlign', 'labelMinWidth', 'labelTextAlign', 'labelWidth', 'labelWrap', 'boxLabelAlign', {from:'responsiveConfiguration', to:'responsiveConfig'}, {from:'id', to:'itemId'}];
+  nonBindableAttributes.forEach(attribute => {
+    let sourceAttribute = attribute, targetAttribute = attribute;
+    if (Ext.isObject(attribute)) {
+      sourceAttribute = attribute.from;
+      targetAttribute = attribute.to;
     }
-    if (formComponentConfig.id) {
-      targetComponent.itemId = formComponentConfig.id;
+    if (config[sourceAttribute]) {
+      component[targetAttribute] = config[sourceAttribute];
     }
-    ['action', 'minWidth', 'minHeight', 'width', 'height', 'maxWidth', 'maxHeight', 'errorTarget', 'boxLabel', 'flex', 'labelAlign', 'labelMinWidth', 'labelTextAlign', 'labelWidth', 'labelWrap', 'boxLabelAlign', {from:'responsiveConfiguration', to:'responsiveConfig'}].forEach(attribute => {
-      let sourceAttribute = attribute, targetAttribute = attribute;
-      if (Ext.isObject(attribute)) {
-        sourceAttribute = attribute.from;
-        targetAttribute = attribute.to;
-      }
-      if (formComponentConfig[sourceAttribute]) {
-        targetComponent[targetAttribute] = formComponentConfig[sourceAttribute];
-      }
-    });
-    if (formComponentConfig.configuration) {
-      Ext.apply(targetComponent, formComponentConfig.configuration);
-    }
-    componentTypeConfig.bind = componentTypeConfig.bind || [];
-    targetComponent.bind = {};
-    componentTypeConfig.bind.forEach(bindAttribute => {
-      const bindString = formComponentConfig[bindAttribute];
-      if (bindString && !Ext.isArray(bindString)) {
-        if (Ext.isString(bindString)) {
-          targetComponent.bind[bindAttribute] = me.getBindString(bindString);
+  });
+  if (config.configuration) {
+    Ext.apply(component, config.configuration);
+  }
+  if (typeConfig.bind) {
+    component.bind = {};
+    typeConfig.bind.forEach(bindAttribute => {
+      const bind = config[bindAttribute];
+      if (bind) {
+        let conversionObject = {translated:false};
+        if (Ext.isString(bind)) {
+          try {
+            conversionObject = BindParser.getBindString(bind);
+          } catch (e) {
+            Ext.log({msg:`The bind string '${bind}' is invalid, due to the following problem:\n${e}`, level:'error'});
+          }
+        }
+        if (conversionObject.translated) {
+          if (conversionObject.numberOfConversions === 0) {
+            Ext.log({msg:`The bind string '${bind}' is correct, but does not contain any targets in the state.`, level:'warn'});
+          }
+          component.bind[bindAttribute] = conversionObject.conversion;
         } else {
-          targetComponent[bindAttribute] = bindString;
+          component[bindAttribute] = bind;
         }
       }
     });
-  } catch (e) {
-    Ext.log({msg:`${this.self.getName()}: ERROR applyCommonConfiguration`, dump:e, stack:true, level:'error'});
   }
-}, getLocalizedValue:function(formConfig, value) {
+  if (typeConfig.remap) {
+    for (const [attribute, remappedAttr] of Object.entries(typeConfig.remap)) {
+      const moveIfExists = source => {
+        if (source && source[attribute]) {
+          source[remappedAttr] = source[attribute];
+          delete source[attribute];
+        }
+      };
+      moveIfExists(component);
+      moveIfExists(component.bind);
+    }
+  }
+}, getLocalizedValue:function(language, value) {
   if (!Ext.isObject(value)) {
     return value;
   }
-  try {
-    if (!formConfig) {
-      const renderer = Ext.first('formsRenderer');
-      if (renderer) {
-        formConfig = renderer.getFormConfig();
-      } else {
-        formConfig = {state:{}};
-      }
-    }
-    formConfig.state = formConfig.state || {};
-    const language = this.getLocalization(formConfig);
-    formConfig.state.language = language;
+  if (value.hasOwnProperty(language)) {
     return value[language];
-  } catch (e) {
-    Ext.log({msg:`${this.self.getName()}: ERROR getLocalizedValue`, dump:e, stack:true, level:'error'});
-    return null;
+  } else if (value.hasOwnProperty(this.fallBackLanguage)) {
+    Ext.log({msg:`${this.self.getName()}: WARN getLocalizedValue, using ${this.fallBackLanguage} as fall back language, because current value is missing ${language} tag.`, level:'warn'});
+    return value[this.fallBackLanguage];
   }
-}, getBindString:string => {
-  const inputString = String(string);
-  const bindStringRegex = /(\/\w+)+/g;
-  if (inputString.match(bindStringRegex)) {
-    let result = inputString.replaceAll(bindStringRegex, bindPart => {
-      let replacedValue = `${bindPart.replace('/', '')}`;
-      return replacedValue.replaceAll('/', '.');
-    });
-    return `{${result}}`;
+  Ext.log({msg:`${this.self.getName()}: ERROR getLocalizedValue. Desired language ${language} and fall back language ${this.fallBackLanguage} not applicable.`, level:'error'});
+  return null;
+}, translateObject:(language, object) => {
+  const me = ConfigParser;
+  if (!Ext.isObject(object) && !Ext.isArray(object)) {
+    return;
   }
-  return inputString;
+  for (const property in object) {
+    if (Ext.isObject(object[property]) && object[property]['MULTI_LANGUAGE']) {
+      object[property] = me.getLocalizedValue(language, object[property]['MULTI_LANGUAGE']);
+    } else {
+      me.translateObject(language, object[property]);
+    }
+  }
 }, getLocalization:function(formConfig) {
-  const urlLanguageParam = Ext.Object.fromQueryString(window.location.search.substring(1)).language, stateLanguage = formConfig.state && formConfig.state.language ? formConfig.state.language : null, defaultLanguage = formConfig.configuration && formConfig.configuration.defaultLanguage ? formConfig.configuration.defaultLanguage : null;
-  return urlLanguageParam || stateLanguage || defaultLanguage || 'de';
+  const urlLanguageParam = Ext.Object.fromQueryString(window.location.search.substring(1)).language, stateLanguage = formConfig.state?.language, defaultLanguage = formConfig.configuration?.defaultLanguage;
+  let browserLanguage = navigator.language;
+  if (browserLanguage.length > 3) {
+    browserLanguage = browserLanguage.split('-')[0];
+  }
+  return stateLanguage || urlLanguageParam || defaultLanguage || browserLanguage || this.fallBackLanguage;
 }});
 Ext.define('FormsRenderer.common.Util', {singleton:true, getIconWithExtPrefix:function(iconCls) {
   return `x-${iconCls.trim()}`;
 }});
-Ext.define('FormsRenderer.view.CenterMessage', {extend:Ext.Container, alias:'widget.formsCenterMessage', layout:'center', iconCls:'fas fa-info-circle', iconSize:'fa-2x', iconColor:'black', message:'Lorem Ipsum', size:'large', additionalContent:[], initialize:function() {
-  const me = this;
-  me.add({xtype:'container', layout:{type:'vbox', align:'center'}, items:[{margin:'0 0 20 0', html:`<i class="${me.iconSize} ${me.iconCls}" style="color:${me.iconColor}"></i> <span style="font-size:${me.size}">${me.message}</span>`}].concat(me.additionalContent)});
-  me.callParent();
+Ext.define('FormsRenderer.locale.Base', {singleton:true, alternateClassName:'RendererLocale', strings:{}, get:function(key) {
+  return this.strings[key] ?? key;
 }});
-Ext.define('FormsRenderer.view.Error', {extend:FormsRenderer.view.CenterMessage, alias:'widget.formsError', iconCls:'fas fa-exclamation-triangle', iconColor:'#EE5252', config:{formResponse:undefined}, initialize:function() {
-  const me = this;
-  const formResponse = me.getFormResponse() || {};
-  let msg = FormsRenderer.ConfigParser.getLocalizedValue(me.formConfig, formResponse.message || me.message);
-  if (!msg) {
-    msg = FormsRenderer.ConfigParser.getLocalizedValue(me.formConfig, {de:'Fehler', en:'Error'});
-  }
-  me.message = msg;
-  me.callParent();
-}});
-Ext.define('FormsRenderer.view.Success', {extend:FormsRenderer.view.CenterMessage, alias:'widget.formsSuccess', iconCls:'fas fa-check', iconColor:'#41BF41', config:{formResponse:undefined}, initialize:function() {
-  const me = this;
-  const formResponse = me.getFormResponse() || {};
-  let msg = FormsRenderer.ConfigParser.getLocalizedValue(me.formConfig, formResponse.message || me.message);
-  if (!msg) {
-    msg = FormsRenderer.ConfigParser.getLocalizedValue(me.formConfig, {de:'Daten erfolgreich übermittelt', en:'data submit successful'});
-  }
-  me.message = msg;
-  me.callParent();
-}});
-Ext.define('FormsRenderer.view.form.Renderer', {extend:Ext.Panel, alias:'widget.formsRenderer', controller:'formsRendererController', config:{formConfig:undefined}, layout:'fit', viewModel:{data:{data:{}, validationOk:{server:true, client:true}}, formulas:{valid:function(get) {
-  return get('validationOk.server') && get('validationOk.client');
-}}}, listeners:{painted:function() {
+Ext.define('FormsRenderer.view.form.Renderer', {extend:Ext.Panel, alias:'widget.formsRenderer', controller:'formsRendererController', config:{formConfig:undefined, mainController:null}, layout:'fit', viewModel:{data:{}}, listeners:{painted:function() {
   window.formsRendererReady = true;
 }}});
-Ext.define('FormsRenderer.view.form.RendererController', {extend:Ext.app.ViewController, alias:'controller.formsRendererController', schemaValidator:undefined, initialState:undefined, control:{'field':{change:'onDataChange', blur:'onBlur'}, '[action\x3dreset]':{tap:'resetForm'}, '[action\x3dvalidate]':{tap:'validateData'}, '[action\x3dsubmit]':{tap:'submitData'}, '[action\x3dprint]':{tap:'printForm'}, '[action\x3dsetData]':{tap:'setDataFunction'}}, init:function(view) {
+Ext.define('FormsRenderer.view.form.RendererController', {extend:Ext.app.ViewController, alias:'controller.formsRendererController', schemaValidator:undefined, validationKeys:{ok:'validationOk', state:'validationOk.state', errors:'validationErrors', field:'field', dataSchema:'dataSchema', all:'all'}, initialFormConfig:undefined, control:{'[action\x3dreset]':{tap:'resetForm'}, '[action\x3dvalidate]':{tap:'validateData'}, '[action\x3dsubmit]':{tap:'submitData'}, '[action\x3dprint]':{tap:'printForm'}, 
+'[action\x3dsetProperty]':{tap:'setTargetPropertyToValue'}}, init:async function(view) {
   const me = this;
-  me.initComponents();
-  if (view.config.formConfig.dataSchema) {
+  me.readyPromise = new Ext.Deferred();
+  await me.initComponents();
+  me.readyPromise.resolve();
+  await me.resetValidationErrors();
+  await me.loadFormState();
+}, getReadyPromise:function() {
+  return this.readyPromise;
+}, initViewModel:function(vm) {
+  const me = this, view = me.getView();
+  vm.bind('{language}', this.onLanguageChange, this);
+  vm.setData(view.config.formConfig.state);
+}, initLanguage:function(formConfig) {
+  const me = this, language = ConfigParser.getLocalization(formConfig);
+  formConfig.state = formConfig.state || {};
+  formConfig.state.language = language;
+  formConfig.state.languageOptions = formConfig.state.languageOptions || [{'value':'de', 'label':{'MULTI_LANGUAGE':{'de':'Deutsch', 'en':'German'}}}, {'value':'en', 'label':{'MULTI_LANGUAGE':{'de':'Englisch', 'en':'English'}}}];
+  me.initialFormConfig = Ext.clone(formConfig);
+  ConfigParser.translateObject(language, formConfig);
+}, initComponents:async function() {
+  const me = this, view = me.getView(), formConfig = view.config.formConfig;
+  view.removeAll();
+  me.initLanguage(formConfig);
+  me.initStyling(formConfig);
+  await ConfigParser.initAsync(formConfig);
+  const formComponents = ConfigParser.getComponents(formConfig);
+  try {
+    view.add(formComponents);
+  } catch (e) {
+    Ext.log({msg:'ERROR: Adding form items incomplete. Bind-Strings may be wrong.', dump:e, stack:true, level:'error'});
+    console.warn(formComponents);
+  }
+  if (formConfig.dataSchema) {
     try {
-      me.schemaValidator = ajv.compile(view.config.formConfig.dataSchema);
+      me.schemaValidator = ajv.compile(formConfig.dataSchema);
     } catch (e) {
       view.removeAll();
       view.setItems({xtype:'formsError', message:`invalid dataSchema in forms config<br>${e.message}`});
     }
   }
-}, initViewModel:function(vm) {
-  const me = this, view = me.getView();
-  me.initialState = Ext.clone(view.config.formConfig.state || {});
-  vm.setData(view.config.formConfig.state || {});
-}, initComponents:function() {
-  const me = this, view = me.getView();
-  view.removeAll();
-  me.initStyling(view.config.formConfig);
-  FormsRenderer.ConfigParser.initAsync(view.config.formConfig).then(() => {
-    let formItems = FormsRenderer.ConfigParser.getComponents(view.config.formConfig);
-    if (formItems.length === 0) {
-      formItems = [{xtype:'formsError', message:'\x3cb\x3eForms Renderer - No Items\x3c/b\x3e'}];
-    }
-    view.add(formItems);
-  });
 }, initStyling:function(formConfig) {
   const configuration = formConfig.configuration;
   if (configuration) {
@@ -70242,189 +70425,326 @@ Ext.define('FormsRenderer.view.form.RendererController', {extend:Ext.app.ViewCon
       }
     }
   }
-}, validateData:function(source) {
-  const me = this, view = me.getView(), vm = me.getViewModel(), deferred = new Ext.Deferred();
-  view.query('[isFormsComponent]').forEach(component => {
+}, resetForm:async function() {
+  const me = this, vm = me.getViewModel();
+  const initState = Ext.clone(me.initialFormConfig.state);
+  ConfigParser.translateObject(vm.get('language'), initState);
+  vm.setData(initState);
+  await me.resetValidationErrors();
+  return vm.getData();
+}, resetValidationErrors:async function() {
+  const me = this;
+  await me.validateData(null, {onlyValidateSource:false, applyErrors:false});
+  me.setErrorsInErrorWindow();
+}, validateData:async function(source, {onlyValidateSource, applyErrors, url} = {}) {
+  const me = this, view = me.getView(), vm = me.getViewModel();
+  vm.notify();
+  let componentsToBeValidated = [source];
+  if (!source || !onlyValidateSource) {
+    componentsToBeValidated = view.query('[isFormsComponent]');
+  }
+  componentsToBeValidated.forEach(component => {
     if (component.setError) {
       component.setError(null);
     }
   });
-  vm.set('validationErrors', {server:[], client:[]});
-  me.callClientValidation();
-  if (view.config.formConfig.configuration.validationUrl) {
-    me.callServerValidation(source).then(deferred.resolve.bind(deferred, vm.get('validationErrors')), deferred.reject.bind(deferred, vm.get('validationErrors')));
-  } else {
-    deferred.resolve(vm.get('validationErrors'));
-  }
-  return deferred.promise;
-}, resetForm:function() {
-  const me = this;
-  me.getViewModel().setData(Ext.clone(me.initialState));
-}, callClientValidation:function() {
-  const me = this, view = me.getView(), vm = me.getViewModel();
-  let allRequiredConstraintsFulfilled = true;
-  view.query('[isFormsComponent]').forEach(component => {
-    if (component.setError) {
-      const requiredConstraintFulfilled = component.validate();
-      allRequiredConstraintsFulfilled = allRequiredConstraintsFulfilled && requiredConstraintFulfilled;
+  const shouldApplyErrors = applyErrors ?? true;
+  me.callFieldValidation(componentsToBeValidated, shouldApplyErrors);
+  me.callDataSchemaValidation(componentsToBeValidated, shouldApplyErrors);
+  await me.callServerValidation(componentsToBeValidated, shouldApplyErrors, source, url);
+  me.combineValidationErrors();
+  return me.getValidationSummary();
+}, callFieldValidation:function(componentsToBeValidated, applyErrors) {
+  const me = this, validationOkState = me.getValidationOkState(me.validationKeys.field) || me.getValidationBindStringObject();
+  let fieldErrors = me.getValidationErrors(me.validationKeys.field) || [];
+  componentsToBeValidated.forEach(component => {
+    if (component.validate) {
+      const bindPointer = component.getBindPointer();
+      if (bindPointer) {
+        const componentIsValid = component.validate();
+        jsp.set(validationOkState, bindPointer, componentIsValid);
+        if (componentIsValid) {
+          fieldErrors = fieldErrors.filter(error => error.instancePath !== bindPointer);
+        } else {
+          if (!applyErrors) {
+            component.setError(null);
+          }
+          const newError = {instancePath:bindPointer, message:component.getErrorMessage()};
+          const existingErrorIndex = fieldErrors.findIndex(error => error.instancePath === bindPointer);
+          if (existingErrorIndex !== -1) {
+            fieldErrors[existingErrorIndex] = newError;
+          } else {
+            fieldErrors.push(newError);
+          }
+        }
+      }
     }
   });
-  if (!me.schemaValidator) {
-    vm.set('validationOk.client', true);
-    return true;
-  }
-  const validDataSchema = me.schemaValidator(me.getViewModel().get('data'));
-  if (!validDataSchema) {
-    vm.set('validationErrors.client', me.schemaValidator.errors);
-    me.applyValidationErrors(me.schemaValidator.errors);
-  } else {
-    vm.set('validationErrors.client', []);
-  }
-  const valid = validDataSchema && allRequiredConstraintsFulfilled;
-  vm.set('validationOk.client', valid);
-  return valid;
-}, callServerValidation:function(source) {
-  const me = this, view = me.getView(), deferred = new Ext.Deferred();
-  if (!view.config.formConfig.configuration.validationUrl) {
-    deferred.reject('missing validationUrl');
-    return deferred.promise;
-  }
-  me.callBackend(view.config.formConfig.configuration.validationUrl, 'validate', source ? source.formComponentConfig : null).then(responseJson => {
-    deferred.resolve(responseJson);
-  }, deferred.reject);
-  return deferred.promise;
-}, applyValidationErrors:function(errors) {
-  const me = this, view = me.getView(), unreportedErrors = [];
-  errors.forEach(errorObj => {
+  me.setValidationErrors(me.validationKeys.field, fieldErrors, validationOkState);
+}, setValidationErrors:function(key, errors, componentsValid) {
+  const me = this, vm = me.getViewModel();
+  vm.set(`${me.validationKeys.ok}.${key}`, errors.length === 0);
+  vm.set(`${me.validationKeys.state}.${key}`, componentsValid);
+  vm.set(`${me.validationKeys.errors}.${key}`, errors);
+}, getValidationOk:function(key) {
+  return this.getViewModel().get(`${this.validationKeys.ok}.${key}`);
+}, getValidationOkState:function(key) {
+  return this.getViewModel().get(`${this.validationKeys.state}.${key}`);
+}, getValidationErrors:function(key) {
+  return this.getViewModel().get(`${this.validationKeys.errors}.${key}`);
+}, getAllValidationErrors:function() {
+  const errors = this.getViewModel().get(`${this.validationKeys.errors}`);
+  return errors ? Object.values(errors).flat() : [];
+}, getValidationSummary:function() {
+  const me = this;
+  const key = me.validationKeys.all;
+  return {[me.validationKeys.ok]:{[key]:me.getValidationOk(key)}, [me.validationKeys.errors]:{[key]:me.getValidationErrors(key)}};
+}, getValidationBindStringObject:function() {
+  const me = this, view = me.getView();
+  const validationBindStringObject = {};
+  view.query('[isFormsComponent]').forEach(component => {
+    const bindPointer = component.getBindPointer();
+    if (bindPointer) {
+      jsp.set(validationBindStringObject, bindPointer, true);
+    }
+  });
+  return validationBindStringObject;
+}, setPropertyErrorsInstancePath:function(validationFunction, errorTargets, validationErrors, applyErrors = true) {
+  const me = this, view = me.getView(), validationOkState = me.getValidationBindStringObject();
+  errorTargets = errorTargets || view.query('[isFormsComponent]');
+  validationErrors = validationErrors || [];
+  validationErrors.forEach(errorObj => {
     if (errorObj.instancePath) {
-      const targetComponents = view.query('[isFormsComponent]').filter(component => {
-        return component.initialConfig.bind && component.initialConfig.bind.value === FormsRenderer.ConfigParser.getBindString(`/data${errorObj.instancePath}`);
-      });
-      if (targetComponents.length > 0) {
-        targetComponents.forEach(targetComponent => {
-          if (targetComponent.setError) {
-            targetComponent.setError(FormsRenderer.ConfigParser.getLocalizedValue(view.config.formConfig, errorObj.message));
-          }
-        });
-      } else {
-        unreportedErrors.push(errorObj);
+      jsp.set(validationOkState, errorObj.instancePath, false);
+    }
+  });
+  me.setValidationErrors(validationFunction, validationErrors, validationOkState);
+  if (applyErrors) {
+    me.applyValidationErrors(validationErrors, errorTargets);
+  }
+}, combineValidationErrors:function() {
+  const me = this;
+  me.setValidationErrors(me.validationKeys.all, [], {});
+  me.setPropertyErrorsInstancePath(me.validationKeys.all, [], me.getAllValidationErrors(), false);
+}, callDataSchemaValidation:function(errorTargets, applyErrors) {
+  const me = this;
+  if (!me.schemaValidator) {
+    return;
+  }
+  me.schemaValidator(me.getViewModel().getData());
+  me.setPropertyErrorsInstancePath(me.validationKeys.dataSchema, errorTargets, me.schemaValidator.errors, applyErrors);
+}, callServerValidation:async function(errorTargets, applyErrors, source, url) {
+  const me = this, view = me.getView();
+  const validationUrl = url || view.config.formConfig.configuration.validationUrl;
+  if (!validationUrl) {
+    return;
+  }
+  try {
+    const result = await me.callBackend({url:validationUrl, action:'validate', originator:source, errorTargets:errorTargets, applyErrors:applyErrors});
+    if (!Ext.isArray(result)) {
+      me.setPropertyErrorsInstancePath('server', errorTargets, [], applyErrors);
+      Ext.log({msg:'The response to the server validation did not contain an array of validation errors.', level:'warn'});
+    }
+  } catch (error) {
+    Ext.log({msg:'ERROR: Server validation went wrong.', dump:error, level:'error'});
+  }
+}, applyServerValidation:function(errorTargets, payload, applyErrors) {
+  const me = this, validationErrors = payload || [];
+  for (const errorObj of validationErrors) {
+    const target = errorObj.instancePath;
+    if (target && Ext.isString(target) && target.length > 3) {
+      try {
+        const conversionObject = BindParser.getBindString(target);
+        const extractedJsonPointer = target.slice(2, -1);
+        const parsed = jsp.parse(extractedJsonPointer);
+        if (parsed.length > 0 && conversionObject.translated && conversionObject.numberOfConversions === 1) {
+          errorObj.instancePath = extractedJsonPointer;
+          continue;
+        }
+      } catch (e) {
+        Ext.log({msg:`InstancePath '${target}' not in expected format:\n${e}`, level:'error'});
       }
-    } else {
+    }
+    Ext.log({msg:`InstancePath '${target}' too short or empty.`, level:'warn'});
+    errorObj.instancePath = undefined;
+  }
+  me.setPropertyErrorsInstancePath('server', errorTargets, validationErrors, applyErrors);
+  me.combineValidationErrors();
+}, applyValidationErrors:function(errors, errorTargets) {
+  const me = this, view = me.getView(), vm = me.getViewModel();
+  let unreportedErrors = [];
+  errors.forEach(errorObj => {
+    let errorIsUnreported = true;
+    if (errorObj.instancePath) {
+      errorObj.translatedInstancePath = BindParser.convertJsonPointerToExtJSBinding(errorObj.instancePath);
+      const targetComponents = errorTargets.filter(component => {
+        return component.initialConfig?.bind?.value === errorObj.translatedInstancePath;
+      });
+      targetComponents.forEach(targetComponent => {
+        if (targetComponent.setError && !targetComponent.getDisabled()) {
+          targetComponent.setError(ConfigParser.getLocalizedValue(vm.get('language'), errorObj.message));
+          errorIsUnreported = false;
+        }
+      });
+    }
+    if (errorIsUnreported) {
       unreportedErrors.push(errorObj);
     }
   });
+  function isNotErrorOfFormsComponent(errorObj) {
+    if (errorObj.translatedInstancePath) {
+      const targetComponents = view.query('[isFormsComponent]').filter(component => {
+        return component.initialConfig?.bind?.value === errorObj.translatedInstancePath;
+      });
+      if (targetComponents.length > 0) {
+        return false;
+      }
+    }
+    return true;
+  }
+  unreportedErrors = unreportedErrors.filter(isNotErrorOfFormsComponent);
+  me.setErrorsInErrorWindow(unreportedErrors);
+}, setErrorsInErrorWindow:function(errors = []) {
   let errorWindow = Ext.first('#errorWindow');
-  if (unreportedErrors.length > 0) {
-    console.warn(JSON.stringify(unreportedErrors, null, 3));
-    const unreportedErrorsCmps = unreportedErrors.map(item => {
-      return {html:`<i class="fa fa-exclamation-circle"></i> ${item.message}`};
-    });
+  if (errors.length > 0) {
     if (errorWindow) {
       errorWindow.show();
     } else {
-      errorWindow = Ext.create({xtype:'dialog', itemId:'errorWindow', title:'Validation errors', cls:'error-window', closable:true, modal:false, collapsible:true, resizable:true, floated:true, hidden:true, width:300, centered:false, x:window.innerWidth - 350, y:50}).show();
+      errorWindow = Ext.create({xtype:'formsValidationErrorWindow'}).show();
     }
+    Ext.log({msg:`Unreported errors:\n${JSON.stringify(errors, null, 3)}`, level:'warn'});
+    const errorComponents = errors.map(item => {
+      return {html:`<i class="fa fa-exclamation-circle"></i> ${item.message}`};
+    });
     errorWindow.removeAll();
-    errorWindow.add(unreportedErrorsCmps);
+    errorWindow.add(errorComponents);
   } else {
     if (errorWindow) {
       errorWindow.close();
     }
   }
-  return Ext.Deferred.resolved();
-}, submitData:function(source) {
+}, submitData:async function(source, {url} = {}) {
   const me = this, view = me.getView();
-  let returnPromise;
-  if (!view.config.formConfig.configuration.submitUrl) {
-    returnPromise = Ext.Deferred.rejected('missing submitUrl');
-  } else if (!me.callClientValidation()) {
-    returnPromise = Ext.Deferred.rejected('Validation failed');
-  } else {
-    let sourceObj;
-    if (source && source.formComponentConfig) {
-      sourceObj = source.formComponentConfig;
-    } else if (source) {
-      sourceObj = source;
+  const errorSubmitUrl = 'Missing submitUrl.', errorValidation = 'Validation failed.';
+  try {
+    const submitUrl = url || view.config.formConfig.configuration.submitUrl;
+    if (!submitUrl) {
+      throw new Error(errorSubmitUrl);
     }
-    returnPromise = me.callBackend(view.config.formConfig.configuration.submitUrl, 'submit', sourceObj);
-  }
-  returnPromise.then(Ext.toast.bind(Ext, 'Submit successful', 5000), Ext.toast.bind(Ext));
-  return returnPromise;
-}, onDataChange:function() {
-  const me = this, view = me.getView();
-  if (view.config.formConfig.configuration.validateOnChange === true) {
-    me.validateData();
-  }
-}, onBlur:function() {
-  const me = this, view = me.getView();
-  if (view.config.formConfig.configuration.validateOnBlur === true) {
-    me.validateData();
-  } else {
-    me.callClientValidation();
-  }
-}, callBackend:function(url, action, originator) {
-  const me = this, view = me.getView(), vm = me.getViewModel(), deferred = new Ext.Deferred();
-  view.setMasked({xtype:'loadmask', message:'Lädt'});
-  Ext.Ajax.request({url:url, jsonData:{action:action, originator:originator, form:view.config.formConfig}, success:function(response) {
-    view.unmask();
-    const responseJson = Ext.decode(response.responseText, true);
-    if (responseJson) {
-      if (responseJson.validationErrors) {
-        vm.set('validationErrors.server', responseJson.validationErrors);
-        vm.set('validationOk.server', !Ext.isArray(responseJson.validationErrors) || responseJson.validationErrors.length <= 0);
-        me.applyValidationErrors(responseJson.validationErrors);
-      }
-      if (responseJson.result === 'success') {
-        if (responseJson.action) {
-          me.handleAction(responseJson.action, responseJson.data);
-        } else {
-          view.removeAll();
-          view.add({xtype:'formsSuccess', flex:1, formConfig:view.config.formConfig, formResponse:responseJson, additionalContent:[{xtype:'button', iconCls:'x-fas fa-undo', handler:'resetRenderer', text:FormsRenderer.ConfigParser.getLocalizedValue(me.formConfig, {de:'Zurück', en:'Back'})}]});
-        }
-      } else if (responseJson.result === 'failure') {
-        view.removeAll();
-        view.add({xtype:'formsError', flex:1, formConfig:view.config.formConfig, formResponse:responseJson});
-      }
-      deferred.resolve(responseJson);
+    await me.validateData();
+    if (!me.getValidationOk(me.validationKeys.all)) {
+      throw new Error(errorValidation);
+    }
+    const result = await me.callBackend({url:submitUrl, action:'submit', originator:source, mask:true});
+    Ext.toast('Submit received.', 5000);
+    return result;
+  } catch (error) {
+    const errorMessage = error.message ? error.message : error;
+    if (errorMessage === errorValidation) {
+      Ext.toast(`Submit aborted: ${errorMessage}`, 5000);
+      Ext.log({msg:'Submit aborted.', dump:error, level:'info'});
     } else {
-      deferred.reject('unexpected response');
+      Ext.toast(`Submit failed: ${errorMessage}`, 5000);
+      Ext.log({msg:'ERROR: Submit failed.', dump:error, level:'error'});
     }
-  }, failure:function(response) {
+    return errorMessage;
+  }
+}, onLanguageChange:function(newLanguage) {
+  const me = this, view = me.getView(), availableLanguages = me.getAvailableLanguages(), mainController = view.getMainController();
+  if (newLanguage !== me.initialFormConfig.state.language && availableLanguages.includes(newLanguage)) {
+    const newConfig = Ext.clone(me.initialFormConfig);
+    newConfig.state.language = newLanguage;
+    mainController.createForm(newConfig);
+  }
+}, getAvailableLanguages:function() {
+  const me = this, vm = me.getViewModel();
+  const languageOptions = vm.get('languageOptions');
+  return languageOptions.map(l => l.value);
+}, getFormWithCurrentState:function() {
+  const me = this, view = me.getView(), vm = me.getViewModel();
+  const form = Ext.clone(view.config.formConfig);
+  form.state = Ext.clone(vm.getData());
+  return form;
+}, callBackend:async function({url, action, originator, errorTargets, applyErrors, mask}) {
+  const me = this, view = me.getView(), mainController = view.getMainController();
+  if (originator?.formComponentConfig) {
+    originator = originator.formComponentConfig;
+  }
+  if (mask) {
+    view.setMasked({xtype:'loadmask', message:'Lädt'});
+  }
+  try {
+    const jsonData = {action:action, originator:originator, form:me.getFormWithCurrentState()};
+    return mainController.sendRequest(url, jsonData, {errorTargets, applyErrors});
+  } catch (error) {
+    throw new Error(error);
+  } finally {
     view.unmask();
-    deferred.reject(`server-side failure with status code ${response.status}`);
-  }});
-  return deferred.promise;
-}, handleAction:function(action, data) {
-  if (action === 'setFormConfig') {
-    const formConfig = data.formConfig;
-    this.setFormConfig(formConfig);
-  } else if (action === 'setFormState') {
-    const state = data.state || {};
-    this.setFormState(state);
-  } else if (action === 'downloadFile') {
-    const fileData = data || {};
-    this.downloadFile(fileData.data, fileData.fileName, fileData.mimeType, fileData.base64Encoded);
-  } else if (action === 'multiActions') {
-    const actions = data;
-    Ext.each(actions, action => {
-      this.handleAction(action.action, action.data);
-    });
-  } else if (action === 'print') {
-    this.printForm();
+  }
+}, handleAction:async function(action, payload, options) {
+  const me = this, view = me.getView(), vm = me.getViewModel(), {errorTargets, applyErrors, source} = options;
+  switch(action) {
+    case 'setFormState':
+      return me.setFormState(payload);
+    case 'downloadFile':
+      const data = payload?.data;
+      if (data === undefined) {
+        throw new Error('Data for download is not defined.');
+      }
+      return me.downloadFile(data, payload?.fileName, payload?.mimeType, payload?.base64Encoded);
+    case 'multiActions':
+      const result = [];
+      const mainController = view.getMainController();
+      for (const d of payload) {
+        result.push(await mainController.handleRequest(d, options));
+      }
+      return result;
+    case 'print':
+      return me.printForm();
+    case 'submit':
+      return me.submitData(source, payload);
+    case 'getFormState':
+      return me.loadFormState(payload.url);
+    case 'validate':
+      return me.validateData(source, payload);
+    case 'validationErrors':
+      me.applyServerValidation(errorTargets, payload, applyErrors);
+      return payload;
+    case 'reset':
+      return me.resetForm();
+    case 'dialog':
+      Ext.create({xtype:'formsSubmitModal', type:payload?.type, message:ConfigParser.getLocalizedValue(vm.get('language'), payload?.message), title:ConfigParser.getLocalizedValue(vm.get('language'), payload?.title), iconClass:payload?.icon, iconColor:payload?.iconColor}).show();
+      return;
+    default:
+      throw new Error(`The action "${action}" is not available.`);
+  }
+}, handleFieldAction:async function(config, source) {
+  const me = this, view = me.getView(), mainController = view.getMainController();
+  try {
+    await mainController.handleRequest(config, {source:source});
+  } catch (error) {
+    Ext.log({msg:`ERROR: handling field action ${config.action}.`, dump:error, level:'error'});
+  }
+}, loadFormState:async function(url) {
+  const me = this, view = me.getView(), mainController = view.getMainController(), urlParams = Ext.Object.fromQueryString(window.location.search.substring(1));
+  const stateUrl = url || view.config.formConfig.configuration.stateUrl || urlParams.stateUrl;
+  if (!stateUrl) {
+    return;
+  }
+  try {
+    const formState = await mainController.sendGETRequest(stateUrl);
+    me.setFormState(formState);
+  } catch (error) {
+    Ext.log({msg:`ERROR: loading data from URL: ${stateUrl} failed.`, dump:error, level:'error'});
   }
 }, setFormState:function(state) {
-  const vm = this.getViewModel();
-  const currentState = vm.get('data');
-  const newState = Ext.apply({}, state, currentState);
-  if (state) {
-    vm.set('data', newState);
-  }
-}, setFormConfig:function(formConfig) {
-  const view = this.getView();
-  const mainController = view.up('formsRendererMain').getController();
-  mainController.addFormRenderer(formConfig);
-}, resetRenderer:function() {
-  this.getView().up('formsRendererMain').getController().resetRenderer();
+  const me = this, vm = me.getViewModel();
+  Ext.Object.merge(me.initialFormConfig.state, state);
+  const currentState = Ext.clone(vm.getData());
+  Ext.Object.merge(currentState, state);
+  ConfigParser.translateObject(currentState.language, currentState);
+  vm.setData(currentState);
+  me.resetValidationErrors();
 }, downloadFile:function(data, fileName, mimeType, base64Encoded) {
   fileName = fileName || 'download';
   mimeType = mimeType || '';
@@ -70442,53 +70762,42 @@ Ext.define('FormsRenderer.view.form.RendererController', {extend:Ext.app.ViewCon
     document.body.removeChild(anchorElement);
   });
 }, printForm:function() {
-  print();
-}, setDataFunction:function(source) {
-  const targetBindString = String(source.formComponentConfig.target).replaceAll('/', '.');
-  const newValue = source.formComponentConfig.value;
-  const vm = this.getViewModel();
-  let binding = vm.bind({bindTo:`{data.${targetBindString}}`, deep:true}, function(s) {
-    null;
-  });
-  let result = newValue;
-  if (newValue === '++') {
-    result = binding.getValue() + 1;
-  } else if (newValue === '--') {
-    result = binding.getValue() - 1;
+  window.print();
+}, setTargetPropertyToValue:function(source) {
+  this.getViewModel().set(source.getBind().target.stub.path, source.getValue());
+}});
+Ext.define('FormsRenderer.view.form.table.column.Text', {extend:Ext.grid.column.Text, alias:'widget.formsTextColumn', mixins:[FormsRenderer.view.form.component.Mixin]});
+Ext.define('FormsRenderer.view.form.table.column.Boolean', {extend:Ext.grid.column.Check, alias:'widget.formsBooleanColumn', mixins:[FormsRenderer.view.form.component.Mixin], constructor:function(config) {
+  const me = this;
+  me.callParent([config]);
+  if (config.editable !== true) {
+    me.addListener({beforecheckchange:function() {
+      return false;
+    }});
   }
-  binding.setValue(result);
 }});
-Ext.define('FormsRenderer.view.form.table.column.Text', {extend:Ext.grid.column.Text, alias:'widget.formsTextColumn', mixins:[FormsRenderer.view.form.component.Mixin], formConfig:undefined, formComponentConfig:undefined, constructor:function(config) {
-  const me = this;
-  me.callParent([config]);
-}});
-Ext.define('FormsRenderer.view.form.table.column.Boolean', {extend:Ext.grid.column.Check, alias:'widget.formsBooleanColumn', mixins:[FormsRenderer.view.form.component.Mixin], formConfig:undefined, formComponentConfig:undefined, constructor:function(config) {
-  const me = this;
-  if (config.editable) {
-    config.disabled = false;
-  }
-  me.callParent([config]);
-}});
-Ext.define('FormsRenderer.view.form.table.column.Number', {extend:Ext.grid.column.Number, alias:'widget.formsNumberColumn', mixins:[FormsRenderer.view.form.component.Mixin], formConfig:undefined, formComponentConfig:undefined, constructor:function(config) {
-  const me = this;
-  me.callParent([config]);
-}});
-Ext.define('FormsRenderer.view.form.table.column.Date', {extend:Ext.grid.column.Date, alias:'widget.formsDateColumn', mixins:[FormsRenderer.view.form.component.Mixin], formConfig:undefined, formComponentConfig:undefined, constructor:function(config) {
-  const me = this;
-  me.callParent([config]);
-}});
-Ext.define('FormsRenderer.view.form.table.ColumnConfigParser', {singleton:true, componentTypeMap:{TEXT:{xtype:'formsTextColumn'}, BOOLEAN:{xtype:'formsBooleanColumn'}, NUMBER:{xtype:'formsNumberColumn'}, DATE:{xtype:'formsDateColumn'}}, getColumns:function(tableConfig, columnConfigs) {
+Ext.define('FormsRenderer.view.form.table.column.Number', {extend:Ext.grid.column.Number, alias:'widget.formsNumberColumn', mixins:[FormsRenderer.view.form.component.Mixin]});
+Ext.define('FormsRenderer.view.form.table.column.Date', {extend:Ext.grid.column.Date, alias:'widget.formsDateColumn', mixins:[FormsRenderer.view.form.component.Mixin]});
+Ext.define('FormsRenderer.view.form.table.ColumnConfigParser', {singleton:true, componentTypeMap:{TEXT:{xtype:'formsTextColumn', columnType:'string', editor:'formsTextField', remap:{'label':'text'}}, BOOLEAN:{xtype:'formsBooleanColumn', columnType:'boolean', editor:'formsCheckbox', remap:{'label':'text'}}, NUMBER:{xtype:'formsNumberColumn', columnType:'number', editor:'formsNumberField', remap:{'label':'text'}}, DATE:{xtype:'formsDateColumn', columnType:'gridDate', editor:'formsDateField', remap:{'label':'text'}}}, 
+getColumns:function(tableConfig, columnConfigs) {
   const me = this;
   let internalColumnConfigs = [];
   if (Ext.isArray(columnConfigs)) {
     internalColumnConfigs = columnConfigs.map(columnConfig => {
       const type = columnConfig.type ? columnConfig.type.toUpperCase() : 'TEXT';
       const baseConfig = me.componentTypeMap[type];
-      const internalColumnConfig = Ext.apply(baseConfig, columnConfig);
-      internalColumnConfig.text = internalColumnConfig.label;
-      internalColumnConfig.dataIndex = internalColumnConfig.fieldName;
-      if (tableConfig.cellEditing || tableConfig.rowEditing) {
+      const internalColumnConfig = {xtype:baseConfig.xtype, columnType:baseConfig.columnType, editor:baseConfig.editor};
+      ConfigParser.applyCommonConfiguration(internalColumnConfig, columnConfig, baseConfig);
+      internalColumnConfig.dataIndex = columnConfig.fieldName;
+      if (columnConfig.format) {
+        internalColumnConfig.format = columnConfig.format;
+      }
+      if (!internalColumnConfig.disabled && tableConfig.cellEditing) {
         internalColumnConfig.editable = true;
+      }
+      if (tableConfig.rowEditing) {
+        internalColumnConfig.editable = true;
+        internalColumnConfig.disabled = false;
       }
       return internalColumnConfig;
     });
@@ -70506,89 +70815,85 @@ Ext.define('FormsRenderer.view.main.Main', {extend:Ext.Panel, xtype:'formsRender
   }
   me.callParent([config]);
 }});
-Ext.define('FormsRenderer.view.main.MainController', {extend:Ext.app.ViewController, alias:'controller.mainController', listen:{global:{message:'onMessage'}}, sourceId:'*', beforeInit:function() {
+Ext.define('FormsRenderer.view.main.MainController', {extend:Ext.app.ViewController, alias:'controller.mainController', listen:{global:{message:'onMessage'}}, sourceId:'*', beforeInit:async function() {
   const me = this, urlParams = Ext.Object.fromQueryString(window.location.search.substring(1)), formUrl = urlParams.formUrl;
   me.sourceId = urlParams.sourceId || me.sourceId;
-  me.ajv = ajv;
-  me.formConfigValidator = me.ajv.compile(FormsConfigSchema);
+  me.formConfigValidator = ajv.compile(FormsConfigSchema);
   if (!formUrl || String(formUrl).toLowerCase() === 'iframe') {
     me.iframeMode = true;
     me.setContent({xtype:'formsCenterMessage', iconCls:'fas fa-spinner fa-5x fa-spin', size:'large', message:'No formUrl parameter found. Wait for formConfig injection.'});
   } else {
-    Ext.Ajax.request({url:formUrl, useDefaultXhrHeader:false, success:response => {
-      const formConfig = JSON.parse(response.responseText);
-      me.createForm(formConfig, urlParams);
-    }, failure:() => {
-      me.setContent({xtype:'formsError', message:'Form load failed'});
-    }});
+    me.getFormConfig(formUrl);
   }
 }, init:function() {
   const me = this;
-  me.sendEventToParent('ready');
-}, createForm:function(formConfig, urlParams) {
+  me.sendMessageResponse(true, {action:'ready'}, {origin:'*'});
+}, getFormConfig:async function(url) {
   const me = this;
-  let dataUrl = undefined;
-  if (urlParams && urlParams.dataUrl) {
-    dataUrl = urlParams.dataUrl;
-  } else if (formConfig.configuration && formConfig.configuration.dataUrl) {
-    dataUrl = formConfig.configuration.dataUrl;
+  try {
+    const formConfig = await me.sendGETRequest(url);
+    me.createForm(formConfig);
+  } catch (error) {
+    me.setContent({xtype:'formsError', message:'Form load failed.'});
+    Ext.log({msg:error, level:'error'});
   }
-  if (dataUrl) {
-    this.loadDataFromUrl(dataUrl).then(loadedData => {
-      formConfig.state.data = Ext.apply({}, loadedData, formConfig.state.data);
-      me.addFormRenderer(formConfig);
-    })["catch"](() => {
-      me.addFormRenderer(formConfig);
-      Ext.log({msg:`Error while getting data from URL: ${dataUrl}`, level:'warn'});
-    });
-  } else {
-    me.addFormRenderer(formConfig);
-  }
-}, addFormRenderer:function(formConfig) {
+}, createForm:function(formConfig) {
   const me = this;
   const valid = me.formConfigValidator(formConfig);
   me.formConfig = formConfig;
   if (!valid) {
     me.setContent({xtype:'formsError', message:`Invalid forms file<br><pre>${JSON.stringify(me.formConfigValidator.errors, undefined, 3)}</pre>`});
   } else {
-    me.setContent({xtype:'formsRenderer', formConfig:formConfig});
+    me.setContent({xtype:'formsRenderer', formConfig:formConfig, mainController:me});
   }
-}, onMessage:function(dataJson, event) {
-  const me = this, renderer = me.getView().down('formsRenderer');
-  if (!dataJson || !dataJson.requestName || !dataJson.requestName) {
+}, getRendererController:async function() {
+  const me = this;
+  if (me.activeComponent?.xtype !== 'formsRenderer') {
+    throw new Error('Renderer not initialized.');
+  }
+  const rendererController = me.activeComponent.getController();
+  await rendererController.getReadyPromise();
+  return rendererController;
+}, handleRequest:async function(request, options = {}) {
+  const me = this, action = request?.action, payload = request?.payload;
+  if (!action) {
     return;
   }
-  if (dataJson.requestName === 'setFormConfig') {
-    const formConfig = dataJson.request;
-    me.createForm(formConfig);
-    me.sendMessageResponse(dataJson, event, {});
-  } else if (dataJson.requestName === 'getFormConfig' && renderer) {
-    me.sendMessageResponse(dataJson, event, renderer.getFormConfig());
-  } else if (dataJson.requestName === 'setData' && renderer) {
-    renderer.getViewModel().set('data', Ext.apply(renderer.getViewModel().get('data'), dataJson.request));
-    me.sendMessageResponse(dataJson, event, renderer.getViewModel().get('data'));
-  } else if (dataJson.requestName === 'validateData' && renderer) {
-    renderer.getController().validateData().then(me.sendMessageResponse.bind(me, dataJson, event), me.sendMessageResponse.bind(me, dataJson, event));
-  } else if (dataJson.requestName === 'submitData' && renderer) {
-    renderer.getController().submitData(dataJson.request).then(me.sendMessageResponse.bind(me, dataJson, event), me.sendMessageResponse.bind(me, dataJson, event));
-  } else if (dataJson.requestName === 'resetForm' && renderer) {
-    renderer.getController().resetForm();
-    me.sendMessageResponse(dataJson, event, {});
-  } else if (dataJson.requestName === 'printForm' && renderer) {
-    renderer.getController().printForm();
-    me.sendMessageResponse(dataJson, event, {});
+  switch(action) {
+    case 'setFormConfig':
+      return me.createForm(payload);
+    case 'resetRenderer':
+      return me.createForm(me.formConfig);
+    case 'getFormConfig':
+      return me.getFormConfig(payload.url);
+    default:
+      const rendererController = await me.getRendererController();
+      return rendererController.handleAction(action, payload, options);
   }
-}, sendMessageResponse:function(sourceEventData, sourceEvent, response) {
+}, onMessage:async function(dataJson, event) {
   const me = this;
-  if (sourceEventData && sourceEvent && response) {
-    const responseObj = {requestName:sourceEventData.requestName, destinationId:sourceEventData.sourceId || me.sourceId, response:response};
-    sourceEvent.source.postMessage(JSON.stringify(responseObj), sourceEvent.origin);
+  if (Object.hasOwn(dataJson, 'response')) {
+    return;
+  }
+  try {
+    const result = await me.handleRequest(dataJson);
+    me.sendMessageResponse(true, dataJson, event, result);
+  } catch (e) {
+    me.sendMessageResponse(false, dataJson, event, {errorMessage:e.message});
+    Ext.log({msg:e, level:'error'});
+  }
+}, sendMessageResponse:function(success, sourceEventData, sourceEvent, response = {}) {
+  const me = this;
+  if (sourceEventData && sourceEvent) {
+    const responseObj = {success:success, action:sourceEventData.action, destinationId:sourceEventData.sourceId || me.sourceId, response:response};
+    window.parent.postMessage(JSON.stringify(responseObj), sourceEvent.origin);
   }
 }, setContent:function(component) {
   const me = this;
-  component.listeners = Ext.apply({}, component.listeners, {painted:me.sendEventToParent.bind(me, 'rendered')});
+  component.listeners = Ext.apply({}, component.listeners, {painted:me.sendMessageResponse.bind(me, true, {action:'rendered'}, {origin:'*'}, {})});
   me.getView().removeAll();
-  me.getView().add(component);
+  const createdComponent = me.getView().add(component);
+  me.activeComponent = createdComponent;
 }, editFormConfig:function() {
   const me = this;
   Ext.apply(me.formConfig.state, me.getView().down('formsRenderer').getViewModel().getData());
@@ -70599,29 +70904,72 @@ Ext.define('FormsRenderer.view.main.MainController', {extend:Ext.app.ViewControl
       Ext.toast('Invalid JSON');
       return;
     }
-    me.addFormRenderer(newFormConfig);
+    me.createForm(newFormConfig);
     dialog.destroy();
   }}});
   dialog.show();
-}, sendEventToParent:function(eventName) {
+}, sendRequest:async function(url, jsonData, options) {
   const me = this;
-  if (window.parent && window.parent.postMessage) {
-    const responseObj = {requestName:eventName, destinationId:me.sourceId};
-    window.parent.postMessage(JSON.stringify(responseObj), '*');
-  }
-}, loadDataFromUrl:function(url) {
+  const responseJson = await me.ajaxCall({method:'POST', url:url, jsonData:jsonData});
+  return me.handleRequest(responseJson, options);
+}, sendGETRequest:function(url) {
+  const me = this;
+  return me.ajaxCall({method:'GET', url:url});
+}, ajaxCall:function({method, url, jsonData}) {
   const deferred = new Ext.Deferred();
-  Ext.Ajax.request({url:url, method:'GET', useDefaultXhrHeader:false, success:response => {
-    const data = Ext.decode(response.responseText);
-    deferred.resolve(data);
-  }, failure:() => {
-    deferred.reject();
+  Ext.Ajax.request({method:method, url:url, jsonData:jsonData, useDefaultXhrHeader:method === 'GET' ? false : true, success:async function(response) {
+    try {
+      const responseJson = Ext.decode(response.responseText, true);
+      if (responseJson) {
+        deferred.resolve(responseJson);
+      } else {
+        deferred.reject('Unexpected response');
+      }
+    } catch (err) {
+      deferred.reject(err);
+    }
+  }, failure:function(response) {
+    deferred.reject(`Server-side failure with status code ${response.status}`);
   }});
-  return deferred;
-}, resetRenderer:function() {
-  const me = this;
-  me.setContent({xtype:'formsRenderer', formConfig:me.formConfig});
+  return deferred.promise;
 }});
+Ext.define('FormsRenderer.view.CenterMessage', {extend:Ext.Container, alias:'widget.formsCenterMessage', layout:'center', iconCls:'fas fa-info-circle', iconSize:'fa-2x', iconColor:'black', size:'large', additionalContent:[], initialize:function() {
+  const me = this;
+  me.add({xtype:'container', layout:{type:'vbox', align:'center'}, items:[{margin:'0 0 20 0', html:`<i class="${me.iconSize} ${me.iconCls}" style="color:${me.iconColor}; margin-right: ${me.message && me.iconCls ? 8 : 0}px;"> </i><span style="font-size:${me.size}">${me.message || ''}</span>`}]});
+  me.callParent();
+}});
+Ext.define('FormsRenderer.view.Error', {extend:FormsRenderer.view.CenterMessage, alias:'widget.formsError', iconCls:'fas fa-exclamation-triangle', iconColor:'#EE5252'});
+Ext.define('FormsRenderer.view.SubmitModal', {extend:Ext.Dialog, alias:'widget.formsSubmitModal', modal:true, closable:true, layout:'fit', config:{type:null, message:null, title:null, iconColor:null, iconClass:null}, constructor:function(config) {
+  config.closeToolText = RendererLocale.get('closeToolText');
+  this.callParent([config]);
+}, initialize:function() {
+  let modalType = this.getType();
+  let modalClass;
+  switch(modalType) {
+    case 'error':
+      modalClass = 'formsError';
+      break;
+    case 'info':
+      modalClass = 'formsCenterMessage';
+      break;
+    default:
+      modalType = 'success';
+      modalClass = 'formsSuccess';
+  }
+  const modalTitle = this.getTitle() ?? RendererLocale.get(`${modalType}MessageTitle`);
+  this.setTitle(modalTitle);
+  const config = {xtype:modalClass, message:this.getMessage()};
+  if (this.getIconClass() !== undefined) {
+    config.iconCls = this.getIconClass();
+  }
+  if (this.getIconColor()) {
+    config.iconColor = this.getIconColor();
+  }
+  this.add(config);
+  this.callParent();
+}});
+Ext.define('FormsRenderer.view.Success', {extend:FormsRenderer.view.CenterMessage, alias:'widget.formsSuccess', iconCls:'fas fa-check', iconColor:'#41BF41'});
+Ext.define('FormsRenderer.view.ValidationErrorWindow', {extend:Ext.Dialog, alias:'widget.formsValidationErrorWindow', itemId:'errorWindow', title:'Validation errors', cls:'error-window', closable:true, modal:false, collapsible:true, resizable:true, floated:true, hidden:true, width:300, centered:false, x:window.innerWidth - 350, y:50});
 Ext.application({extend:FormsRenderer.Application, name:'FormsRenderer', mainView:'FormsRenderer.view.main.Main'});
 "use strict";
 

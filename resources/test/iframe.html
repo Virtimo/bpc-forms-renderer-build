@@ -34,15 +34,15 @@
             delay = delay || 0;
 
             window.addEventListener("message", (event) => {
-                console.warn(event.data);
+                console.log("Message of iframe received:\n", event.data);
                 // we only want message from "postMessage" fn, which sends a string as data
                 if (event.data && event.isTrusted !== false /* IE don't support this, so undefined should be ok */) {
                     const dataJson = JSON.parse(event.data);
-                    if (dataJson && dataJson.requestName === "ready") {
+                    if (dataJson && dataJson.action === "ready") {
                         iframe.contentWindow.postMessage(
                             JSON.stringify({
-                                                requestName: "setFormConfig",
-                                                request:  {
+                                                action: "setFormConfig",
+                                                payload:  {
                                                     "$schema": "http://bpc.virtimo.net/forms/1/schema",
                                                     "metaData": {
                                                         "id": 0,
@@ -57,23 +57,23 @@
                                                             "label": "Iframe",
                                                             "components": [
                                                             {
-                                                                "value":"{data.welcomeMsg}",
+                                                                "value":"${/data/welcomeMsg}",
                                                                 "type": "html",
                                                                 "id":"htmlField"
                                                                 },
                                                                 {
                                                                     "id": "empty",
                                                                     "type": "textfield",
-                                                                    "value":"{data.empty}"
+                                                                    "value":"${/data/empty}"
                                                                 },
                                                                 {
                                                                     "type": "textfield",
                                                                     "id": "tooShortText",
-                                                                    "value": "{data.textValue}"
+                                                                    "value": "${/data/textValue}"
                                                                 },
                                                                 {
                                                                     "type": "textfield",
-                                                                    "value": "/data/textValue"
+                                                                    "value": "${/data/textValue}"
                                                                 },
                                                                 {
                                                                     "id": "reset",
@@ -99,16 +99,26 @@
                                                                     "action": "validate",
                                                                     "label": "validate"
                                                                 },
+                                                                {
+                                                                    "id": "doNothing",
+                                                                    "type": "button",
+                                                                    "label": "doNothing"
+                                                                }
                                                             ]
                                                         }
                                                     ],
                                                     "dataSchema": {
                                                         "type": "object",
                                                         "properties": {
-                                                        "textValue": {
-                                                                "minLength": 20,
-                                                                "type": "string",
-                                                                "errorMessage":"Der Wert muss mindestens 20 Zeichen lang sein"
+                                                            "data": {
+                                                                "type": "object",
+                                                                "properties": {
+                                                                "textValue": {
+                                                                        "minLength": 20,
+                                                                        "type": "string",
+                                                                        "errorMessage":"Der Wert muss mindestens 20 Zeichen lang sein"
+                                                                    }
+                                                                }
                                                             }
                                                         }
                                                     },

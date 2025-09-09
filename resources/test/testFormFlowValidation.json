@@ -25,8 +25,10 @@
             {
               "type": "fieldset",
               "label": {
-                "de": "Typen",
-                "en": "Types"
+                "MULTI_LANGUAGE": {
+                  "de": "Typen",
+                  "en": "Types"
+                }
               },
               "layout": "vertical",
               "components": [
@@ -34,8 +36,10 @@
                   "type": "textfield",
                   "value": "/data/textfield",
                   "label": {
-                    "de": "Text",
-                    "en": "Text"
+                    "MULTI_LANGUAGE": {
+                      "de": "Text",
+                      "en": "Text"
+                    }
                   }
                 },
 
@@ -43,8 +47,10 @@
                   "type": "datefield",
                   "value": "/data/datefield",
                   "label": {
-                    "de": "Datum",
-                    "en": "Date"
+                    "MULTI_LANGUAGE": {
+                      "de": "Datum",
+                      "en": "Date"
+                    }
                   }
                 },
 
@@ -52,8 +58,10 @@
                   "type": "numberfield",
                   "value": "/data/numberfield",
                   "label": {
-                    "de": "Zahl",
-                    "en": "Number"
+                    "MULTI_LANGUAGE": {
+                      "de": "Zahl",
+                      "en": "Number"
+                    }
                   }
                 },
 
@@ -61,8 +69,10 @@
                   "type": "textarea",
                   "value": "/data/textarea",
                   "label": {
-                    "de": "Mehrzeilig",
-                    "en": "Multiline"
+                    "MULTI_LANGUAGE": {
+                      "de": "Mehrzeilig",
+                      "en": "Multiline"
+                    }
                   }
                 },
 
@@ -70,8 +80,10 @@
                   "type": "checkbox",
                   "value": "/data/checkbox",
                   "label": {
-                    "de": "Checkbox",
-                    "en": "Checkbox"
+                    "MULTI_LANGUAGE": {
+                      "de": "Checkbox",
+                      "en": "Checkbox"
+                    }
                   }
                 },
 
@@ -79,31 +91,39 @@
                   "type": "radiogroup",
                   "value": "/data/radioGroup",
                   "label": {
-                    "de": "Radio Gruppe",
-                    "en": "Radio group"
+                    "MULTI_LANGUAGE": {
+                      "de": "Radio Gruppe",
+                      "en": "Radio group"
+                    }
                   },
                   "options": [
                     {
                       "value": 1,
                       "label": {
-                        "de": "Eins",
-                        "en": "one"
+                        "MULTI_LANGUAGE": {
+                          "de": "Eins",
+                          "en": "one"
+                        }
                       }
                     },
 
                     {
                       "value": 2,
                       "label": {
-                        "de": "Zwei",
-                        "en": "two"
+                        "MULTI_LANGUAGE": {
+                          "de": "Zwei",
+                          "en": "two"
+                        }
                       }
                     },
 
                     {
                       "value": 3,
                       "label": {
-                        "de": "Drei",
-                        "en": "three"
+                        "MULTI_LANGUAGE": {
+                          "de": "Drei",
+                          "en": "three"
+                        }
                       }
                     }
                   ]
@@ -112,34 +132,42 @@
                 {
                   "type": "checkboxgroup",
                   "label": {
-                    "de": "Checkbox Gruppe",
-                    "en": "checkbox group"
+                    "MULTI_LANGUAGE": {
+                      "de": "Checkbox Gruppe",
+                      "en": "checkbox group"
+                    }
                   },
                   "components": [
                     {
-                      "type": "checkbox",
                       "value": "/data/checkboxGroup/one",
+                      "type": "checkbox",
                       "label": {
-                        "de": "Eins",
-                        "en": "one"
+                        "MULTI_LANGUAGE": {
+                          "de": "Eins",
+                          "en": "one"
+                        }
                       }
                     },
 
                     {
-                      "type": "checkbox",
                       "value": "/data/checkboxGroup/two",
+                      "type": "checkbox",
                       "label": {
-                        "de": "Zwei",
-                        "en": "two"
+                        "MULTI_LANGUAGE": {
+                          "de": "Zwei",
+                          "en": "two"
+                        }
                       }
                     },
 
                     {
-                      "type": "checkbox",
                       "value": "/data/checkboxGroup/three",
+                      "type": "checkbox",
                       "label": {
-                        "de": "Drei",
-                        "en": "three"
+                        "MULTI_LANGUAGE": {
+                          "de": "Drei",
+                          "en": "three"
+                        }
                       }
                     }
                   ]
@@ -147,7 +175,6 @@
                 {
                   "type": "thisTypeDoesn'tExist"
                 }
-
               ]
             }
           ]},
@@ -164,8 +191,10 @@
             "type": "textfield",
             "value": "/data/lastName",
             "label": {
-              "de": "Nachname",
-              "en": "Lastname"
+              "MULTI_LANGUAGE": {
+                "de": "Nachname",
+                "en": "Lastname"
+              }
             }
           },
           {
@@ -173,15 +202,19 @@
             "type": "textfield",
             "value": "/data/firstName",
             "label": {
-              "de": "Vorname",
-              "en": "Firstname"
+              "MULTI_LANGUAGE": {
+                "de": "Vorname",
+                "en": "Firstname"
+              }
             }
           },
           {
             "type": "fieldset",
             "label": {
-              "de": "Adresse",
-              "en": "Address"
+              "MULTI_LANGUAGE": {
+                "de": "Adresse",
+                "en": "Address"
+              }
             },
             "layout": "vertical",
             "components": [
@@ -194,16 +227,20 @@
                     "type": "textfield",
                     "value": "/data/address/street",
                     "label": {
-                      "de": "Straße",
-                      "en": "Street"
+                      "MULTI_LANGUAGE": {
+                        "de": "Straße",
+                        "en": "Street"
+                      }
                     }
                   },
                   {
                     "id": "streetNumber",
                     "type": "textfield",
                     "label": {
-                      "de": "Hausnummer",
-                      "en": "Number"
+                      "MULTI_LANGUAGE": {
+                        "de": "Hausnummer",
+                        "en": "Number"
+                      }
                     }
                   }
                 ]
@@ -216,16 +253,20 @@
                     "id": "city",
                     "type": "textfield",
                     "label": {
-                      "de": "Stadt",
-                      "en": "City"
+                      "MULTI_LANGUAGE": {
+                        "de": "Stadt",
+                        "en": "City"
+                      }
                     }
                   },
                   {
                     "id": "country",
                     "type": "textfield",
                     "label": {
-                      "de": "Land",
-                      "en": "Country"
+                      "MULTI_LANGUAGE": {
+                        "de": "Land",
+                        "en": "Country"
+                      }
                     }
                   }
                 ]
@@ -236,8 +277,10 @@
             "id": "consent",
             "type": "checkbox",
             "label": {
-              "de": "OK?",
-              "en": "O.K.?"
+              "MULTI_LANGUAGE": {
+                "de": "OK?",
+                "en": "O.K.?"
+              }
             }
           },
           {
@@ -248,24 +291,30 @@
                 "type": "button",
                 "action": "reset",
                 "label": {
-                  "de": "Zurücksetzen",
-                  "en": "reset"
+                  "MULTI_LANGUAGE": {
+                    "de": "Zurücksetzen",
+                    "en": "reset"
+                  }
                 }
               },
               {
                 "type": "button",
                 "action": "validate",
                 "label": {
-                  "de": "Formular validieren",
-                  "en": "validate form"
+                  "MULTI_LANGUAGE": {
+                    "de": "Formular validieren",
+                    "en": "validate form"
+                  }
                 }
               },
               {
                 "type": "button",
                 "action": "submit",
                 "label": {
-                  "de": "Formular abschicken",
-                  "en": "submit form"
+                  "MULTI_LANGUAGE": {
+                    "de": "Formular abschicken",
+                    "en": "submit form"
+                  }
                 }
               }
             ]
